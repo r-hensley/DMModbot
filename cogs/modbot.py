@@ -14,10 +14,13 @@ import sys
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 RYRY = 202995638860906496
+SPAM_CH = 275879535977955330
 
+#              database structure
 # {
 #     "prefix": {},
-#     "inpms": [],
+#     "insetup": [USER1_ID, USER2_ID],
+#     "inreportroom": {GUILD_ID: USER_ID, GUILD_ID: USER_ID},
 #     "guilds": {
 #         "123446036178059265": {
 #             "channel": 123459535977955330,
@@ -76,17 +79,16 @@ class Modbot(commands.Cog):
         await self.bot.get_user(202995638860906496).send("Channels: \n" +
                                                          '\n'.join([channel.name for channel in guild.channels]))
 
-        return
-        msg_text = "Thanks for inviting me!  See a first-time setup guide here: " \
-                   "https://github.com/ryry013/Rai/wiki/First-time-setup"
-        if guild.system_channel:
-            if guild.system_channel.permissions_for(guild.me).send_messages:
-                await guild.system_channel.send(msg_text)
-                return
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).send_messages:
-                await channel.send(msg_text)
-                return
+        # msg_text = "Thanks for inviting me!  See a first-time setup guide here: " \
+        #            "https://github.com/ryry013/Rai/wiki/First-time-setup"
+        # if guild.system_channel:
+        #     if guild.system_channel.permissions_for(guild.me).send_messages:
+        #         await guild.system_channel.send(msg_text)
+        #         return
+        # for channel in guild.text_channels:
+        #     if channel.permissions_for(guild.me).send_messages:
+        #         await channel.send(msg_text)
+        #         return
 
     # main code is here
     @commands.Cog.listener()
@@ -100,29 +102,42 @@ class Modbot(commands.Cog):
 
         """PM Bot"""
         async def pm_modbot():
-            # starting a report
-            if not msg.guild and msg.author.id not in self.bot.db['inpms']:  # user is not in any rooms
-                try:
-                    self.bot.db['inpms'].append(msg.author.id)
-                    config = await self.modbot_entry(msg)  # the main code for entering the user
-                    return  # if it worked
-                except Exception:
-                    self.bot.db['inpms'].remove(msg.author.id)
-                    await msg.author.send("WARNING: There's been an error. Setup will not continue.")
-                    raise
+            # starting a report, comes here if the user is not in server_select or in a report room already
+            if not msg.guild:
+                if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
+                    guild = None
+                    try:  # the user selects to which server they want to connect
+                        self.bot.db['insetup'].append(msg.author.id)
+                        guild = await self.server_select(msg)
+                        self.bot.db['insetup'].remove(msg.author.id)
+                    except Exception:
+                        self.bot.db['insetup'].remove(msg.author.id)
+                        await msg.author.send("WARNING: There's been an error. Setup will not continue.")
+                        raise
 
-            # a user wants to be removed from waiting list
-            if not msg.guild and msg.content.casefold() == 'cancel':
-                for guild in self.bot.db['guilds']:
-                    if msg.author.id in self.bot.db['guilds'][guild]['waitinglist']:
-                        self.bot.db['guilds'][guild]['waitinglist'].remove(msg.author.id)
-                        await msg.author.send("I've removed you from the waiting list.")
-                return
+                    try:
+                        if guild:
+                            self.bot.db['inreportroom'][str(guild.id)] = msg.author.id
+                            await self.start_report_room(msg, guild)  # this should enter them into the report room
+                        return  # if it worked
+                    except Exception:
+                        del(self.bot.db['inreportroom'][str(guild.id)])
+                        await msg.author.send("WARNING: There's been an error. Setup will not continue.")
+                        raise
+
+                # a user wants to be removed from waiting list
+                if msg.content.casefold() == 'cancel':
+                    for guild in self.bot.db['guilds']:
+                        if msg.author.id in self.bot.db['guilds'][guild]['waitinglist']:
+                            self.bot.db['guilds'][guild]['waitinglist'].remove(msg.author.id)
+                            await msg.author.send("I've removed you from the waiting list.")
+
+                    return
 
             # sending a message during a report
             # this next function returns either five values or five "None" values
             # it tries to find if a user messaged somewhere, which report room connection they're part of
-            config, current_user, report_room, source, dest = self.find_current_guild(msg)
+            config, current_user, report_room, source, dest = await self.find_current_guild(msg)
             if config:  # basically, if it's not None
                 if not dest:  # me trying to fix the weird bug from this morning, config wasn't None but dest was None
                     await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
@@ -130,75 +145,21 @@ class Modbot(commands.Cog):
                 try:
                     await self.send_message(msg, config, current_user, report_room, source, dest)
                 except Exception:
-                    await source.send("WARNING: There's been an error.")
-                    await dest.send("WARNING: There's been an error.")
-                    await self.close_room(config, source, dest)
+                    await self.close_room(config, source, dest, report_room.guild, True)
                     raise
         await pm_modbot()
 
-    """Send message"""
-    async def send_message(self, msg, config, current_user, report_room, source, dest):
-        if msg.content:
-            if msg.content[0] in "_;.,":  # messages starting with _ or other bot prefixes
-                await msg.add_reaction('🔇')
-                return
-        if msg.author.bot:
-            if msg.author == msg.guild.me:
-                if msg.content.startswith('>>> '):
-                    return
-            await msg.add_reaction('🔇')
-            return
-        if msg.author.id not in config['mods']:
-            config['mods'].append(msg.author.id)
-
-        if msg.content:
-            if msg.content.casefold() in ['end', 'done']:
-                await self.close_room(config, source, dest)
-                return
-            if dest == msg.author.dm_channel:
-                cont = f">>> "
-                if len(config['mods']) >= 2:
-                    cont += f"**Moderator {config['mods'].index(msg.author.id) + 1}:** "
-            else:
-                cont = f">>> {msg.author.mention}: "
-            splice = 2000 - len(cont)
-            cont += msg.content[:splice]
-            if len(msg.content) > splice:
-                cont2 = f">>> ... {msg.content[splice:]}"
-            else:
-                cont2 = None
-        else:
-            cont = cont2 = None
-
-        try:
-            if cont and len(msg.embeds) == 1:
-                await dest.send(cont, embed=msg.embeds[0])
-            elif cont and not msg.embeds:
-                await dest.send(cont)
-
-            if len(msg.embeds) > 1:
-                for embed in msg.embeds:
-                    await dest.send(embed=embed)
-
-            if msg.attachments:
-                for attachment in msg.attachments:
-                    await dest.send(f">>> {attachment.url}")
-
-            if cont2:
-                await dest.send(cont2)
-
-        except discord.Forbidden:
-            if dest == current_user.dm_channel:
-                await dest.send("I couldn't send a message to the user (maybe they blocked me). "
-                                "I have closed the chat.")
-
-            elif dest == report_room:
-                await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
-                                       "of the report channel. I have closed this chat.")
-            await self.close_room(config, source, dest)
-
     # for finding out which report session a certain message belongs to, None if not part of anything
-    def find_current_guild(self, msg):
+    async def find_current_guild(self, msg):
+        if msg.guild:
+            if str(msg.guild.id) not in self.bot.db['guilds']:
+                return None, None, None, None, None  # a message in a guild not registered for a report room
+            config = self.bot.db['guilds'][str(msg.guild.id)]
+            if msg.channel.id != config['channel']:
+                return None, None, None, None, None  # a message in a guild, but outside report room
+            source = self.bot.get_channel(config['channel'])  # if it's here, the msg is definitely in report room
+            dest = self.bot.db['insetup']
+        
         for guild in self.bot.db['guilds']:
             config = self.bot.db['guilds'][guild]
             if not config['currentuser']:
@@ -206,21 +167,28 @@ class Modbot(commands.Cog):
             report_room = self.bot.get_channel(config['channel'])
             current_user = self.bot.get_user(config['currentuser'])
             if msg.channel == current_user.dm_channel:  # DM --> Report room
-                print(1)
                 source = msg.author.dm_channel
+                source = msg.author.dm_channel
+                if not source:
+                    source = await msg.author.create_dm()
+                    if not source:
+                        return None, None, None, None, None
                 dest = report_room
                 return config, current_user, report_room, source, dest
             elif msg.channel == report_room:  # Report room --> DM
-                print(2)
                 source = report_room
                 dest = msg.author.dm_channel
+                if not dest:
+                    dest = await msg.author.create_dm()
+                    if not dest:
+                        return None, None, None, None, None
                 return config, current_user, report_room, source, dest
             else:
                 continue
         return None, None, None, None, None
 
     # for first entering a user into the report room
-    async def modbot_entry(self, msg):
+    async def server_select(self, msg):
         shared_guilds = sorted([g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
 
         guild = None
@@ -277,8 +245,12 @@ class Modbot(commands.Cog):
         if str(guild.id) not in self.bot.db['guilds']:
             return
 
+        return guild
+
+    async def start_report_room(self, msg, guild):
         config = self.bot.db['guilds'][str(guild.id)]
         report_channel = self.bot.get_channel(config['channel'])
+
 
         # ####### IF SOMEONE IN THE ROOM ###########
         if config['currentuser']:
@@ -300,6 +272,8 @@ class Modbot(commands.Cog):
                                               f"to clear it.")
                 await m.add_reaction('🔇')
 
+            if msg.author.id in self.bot.db['insetup']:
+                self.bot.db['insetup'].remove(msg.author.id)
             return
 
         # ##### START THE ROOM #######
@@ -430,21 +404,94 @@ class Modbot(commands.Cog):
             #         break
             # return finished_inner
 
-        finish_text = "Something went wrong and I closed the channel. It should be open for the next person to enter."
         try:
             await open_room()  # maybe this should always be True
         except Exception:
-            await report_channel.send(finish_text)
-            await msg.channel.send(finish_text)
-            await self.close_room(config, msg.channel, report_channel)
+            await self.close_room(config, msg.channel, report_channel, guild, True)
             raise
 
+    """Send message"""
+    async def send_message(self, msg, config, current_user, report_room, source, dest):
+        if msg.content:
+            if msg.content[0] in "_;.,":  # messages starting with _ or other bot prefixes
+                await msg.add_reaction('🔇')
+                return
+        if msg.author.bot:
+            if msg.author == msg.guild.me:
+                if msg.content.startswith('>>> '):
+                    return
+            await msg.add_reaction('🔇')
+            return
+        if msg.author.id not in config['mods']:
+            config['mods'].append(msg.author.id)
+
+        if msg.content:
+            if msg.content.casefold() in ['end', 'done']:
+                await self.close_room(config, source, dest, report_room.guild, False)
+                return
+            if dest == msg.author.dm_channel:
+                cont = f">>> "
+                if len(config['mods']) >= 2:
+                    cont += f"**Moderator {config['mods'].index(msg.author.id) + 1}:** "
+            else:
+                cont = f">>> {msg.author.mention}: "
+            splice = 2000 - len(cont)
+            cont += msg.content[:splice]
+            if len(msg.content) > splice:
+                cont2 = f">>> ... {msg.content[splice:]}"
+            else:
+                cont2 = None
+        else:
+            cont = cont2 = None
+
+        try:
+            if cont and len(msg.embeds) == 1:
+                try:
+                    await dest.send(cont, embed=msg.embeds[0])
+                except discord.Forbidden:
+                    await self.close_room(config, source, dest, report_room.guild, True)
+            elif cont and not msg.embeds:
+                await dest.send(cont)
+
+            if len(msg.embeds) > 1:
+                for embed in msg.embeds:
+                    await dest.send(embed=embed)
+
+            if msg.attachments:
+                for attachment in msg.attachments:
+                    await dest.send(f">>> {attachment.url}")
+
+            if cont2:
+                await dest.send(cont2)
+
+        except discord.Forbidden:
+            if dest == current_user.dm_channel:
+                await dest.send("I couldn't send a message to the user (maybe they blocked me). "
+                                "I have closed the chat.")
+
+            elif dest == report_room:
+                await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
+                                       "of the report channel. I have closed this chat.")
+            await self.close_room(config, source, dest, report_room.guild, False)
+
     # for when the room is to be closed and the database reset
-    async def close_room(self, config, source, dest):
-        await source.send("Thank you, I have closed the room.")
-        await dest.send("Thank you, I have closed the room.")
-        if config['currentuser'] in self.bot.db['inpms']:
-            self.bot.db['inpms'].remove(config['currentuser'])
+    # the error argument tells whether the room is being closed normally or after an error
+    async def close_room(self, config, source, dest, guild, error):
+        if not error:
+            try:
+                await source.send("Thank you, I have closed the room.")
+                await dest.send("Thank you, I have closed the room.")
+            except discord.Forbidden:
+                pass
+        else:
+            try:
+                await source.send("WARNING: There's been some kind of error. I will close the room. Please try again.")
+                await dest.send("WARNING: There's been some kind of error. I will close the room. Please try again.")
+            except discord.Forbidden:
+                pass
+
+        if str(guild.id) in self.bot.db['inreportroom']:
+            del(self.bot.db['inreportroom'][str(guild.id)])
         config['mods'] = []
         config['currentuser'] = None
 
@@ -461,6 +508,8 @@ class Modbot(commands.Cog):
                 report_room = self.bot.get_channel(config["channel"])
                 await report_room.send(f"I tried to message {user.name} to tell them the report room opened, but "
                                        f"I couldn't send them a message. I've removed them from the waiting list.")
+
+    # ############ OTHER GENERAL COMMANDS #################
 
     @commands.command()
     async def invite(self, ctx):
@@ -507,8 +556,8 @@ class Modbot(commands.Cog):
         if str(ctx.guild.id) not in self.bot.db['guilds']:
             return
         for user in self.bot.db['guilds'][str(ctx.guild.id)]['waitinglist']:
-            if user in self.bot.db['inpms']:
-                self.bot.db['inpms'].remove(user)
+            if user in self.bot.db['insetup']:
+                self.bot.db['insetup'].remove(str(user))
         self.bot.db['guilds'][str(ctx.guild.id)]['waitinglist'] = []
         await ctx.send("I've cleared the waiting list.")
         await self.dump_json(ctx)
@@ -519,11 +568,8 @@ class Modbot(commands.Cog):
         """Sets the current channel as the report room, or resets the report module"""
         if str(ctx.guild.id) in self.bot.db['guilds']:
             for user in self.bot.db['guilds'][str(ctx.guild.id)]['waitinglist']:
-                if user in self.bot.db['inpms']:
-                    self.bot.db['inpms'].remove(user)
-            if self.bot.db['guilds'][str(ctx.guild.id)]['currentuser']:
-                if self.bot.db['guilds'][str(ctx.guild.id)]['currentuser'] in self.bot.db['inpms']:
-                    self.bot.db['inpms'].remove(self.bot.db['guilds'][str(ctx.guild.id)]['currentuser'])
+                if str(user) in self.bot.db['insetup']:
+                    del(self.bot.db['insetup'][str(user)])
         self.bot.db['guilds'][str(ctx.guild.id)] = {'channel': ctx.channel.id,
                                                     'currentuser': None,
                                                     'waitinglist': [],
@@ -670,6 +716,16 @@ class Modbot(commands.Cog):
     async def pause(self, ctx):
         self.bot.db['pause'] = not self.bot.db['pause']
         await ctx.message.add_reaction('✅')
+
+    @commands.command()
+    @commands.is_owner()
+    async def db(self, ctx):
+        """Shows me my DB"""
+        t = f"prefix: {self.bot.db['prefix']}\nmodrole: {self.bot.db['modrole']}\npause: {self.bot.db['pause']}\n" \
+            f"insetup: {self.bot.db['insetup']}\ninreportroom: {self.bot.db['inreportroom']}\n"
+        for guild in self.bot.db['guilds']:
+            t += f"{guild}: {self.bot.db['guilds'][guild]}\n"
+        await ctx.send(t)
 
 def setup(bot):
     bot.add_cog(Modbot(bot))
