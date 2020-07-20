@@ -1,0 +1,6 @@
+*.idea
+*database
+*.bat
+*.json
+ModbotKey.txt
+./cogs/__pycache/*
