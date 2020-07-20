@@ -102,13 +102,22 @@ class Modbot(commands.Cog):
 
         """PM Bot"""
         async def pm_modbot():
-            # starting a report, comes here if the user is not in server_select or in a report room already
             if not msg.guild:
+                # a user wants to be removed from waiting list
+                if msg.content.casefold() == 'cancel':
+                    for guild in self.bot.db['guilds']:
+                        if msg.author.id in self.bot.db['guilds'][guild]['waitinglist']:
+                            self.bot.db['guilds'][guild]['waitinglist'].remove(msg.author.id)
+                            await msg.author.send("I've removed you from the waiting list.")
+                            return
+                    await msg.author.send("Canceled report")
+                    return
+
+                # starting a report, comes here if the user is not in server_select or in a report room already
                 if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
-                    guild = None
                     try:  # the user selects to which server they want to connect
                         self.bot.db['insetup'].append(msg.author.id)
-                        guild = await self.server_select(msg)
+                        guild: discord.Guild = await self.server_select(msg)
                         self.bot.db['insetup'].remove(msg.author.id)
                     except Exception:
                         self.bot.db['insetup'].remove(msg.author.id)
@@ -117,22 +126,12 @@ class Modbot(commands.Cog):
 
                     try:
                         if guild:
-                            self.bot.db['inreportroom'][str(guild.id)] = msg.author.id
                             await self.start_report_room(msg, guild)  # this should enter them into the report room
                         return  # if it worked
                     except Exception:
                         del(self.bot.db['inreportroom'][str(guild.id)])
                         await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                         raise
-
-                # a user wants to be removed from waiting list
-                if msg.content.casefold() == 'cancel':
-                    for guild in self.bot.db['guilds']:
-                        if msg.author.id in self.bot.db['guilds'][guild]['waitinglist']:
-                            self.bot.db['guilds'][guild]['waitinglist'].remove(msg.author.id)
-                            await msg.author.send("I've removed you from the waiting list.")
-
-                    return
 
             # sending a message during a report
             # this next function returns either five values or five "None" values
@@ -150,42 +149,73 @@ class Modbot(commands.Cog):
         await pm_modbot()
 
     # for finding out which report session a certain message belongs to, None if not part of anything
+    # we should only be here if a user is for sure in the report room
     async def find_current_guild(self, msg):
-        if msg.guild:
+        guild_to_user_dict = self.bot.db['inreportroom']
+        user_to_guild_dict = {j: i for i, j in guild_to_user_dict.items()}
+        if msg.guild:  # guild --> DM
             if str(msg.guild.id) not in self.bot.db['guilds']:
                 return None, None, None, None, None  # a message in a guild not registered for a report room
             config = self.bot.db['guilds'][str(msg.guild.id)]
             if msg.channel.id != config['channel']:
                 return None, None, None, None, None  # a message in a guild, but outside report room
-            source = self.bot.get_channel(config['channel'])  # if it's here, the msg is definitely in report room
-            dest = self.bot.db['insetup']
-        
-        for guild in self.bot.db['guilds']:
-            config = self.bot.db['guilds'][guild]
-            if not config['currentuser']:
-                continue
-            report_room = self.bot.get_channel(config['channel'])
-            current_user = self.bot.get_user(config['currentuser'])
-            if msg.channel == current_user.dm_channel:  # DM --> Report room
-                source = msg.author.dm_channel
-                source = msg.author.dm_channel
-                if not source:
-                    source = await msg.author.create_dm()
-                    if not source:
-                        return None, None, None, None, None
-                dest = report_room
-                return config, current_user, report_room, source, dest
-            elif msg.channel == report_room:  # Report room --> DM
-                source = report_room
-                dest = msg.author.dm_channel
+            if str(msg.guild.id) not in guild_to_user_dict:
+                return None, None, None, None, None  # there's no active report in this guild
+
+            # now for sure you're messaging in the report room of a guild with an active report happening
+
+            current_user = self.bot.get_user(guild_to_user_dict[str(msg.guild.id)])
+
+            source = report_room = self.bot.get_channel(config['channel'])
+            dest = current_user.dm_channel
+            if not dest:
+                dest = await current_user.create_dm()
                 if not dest:
-                    dest = await msg.author.create_dm()
-                    if not dest:
-                        return None, None, None, None, None
-                return config, current_user, report_room, source, dest
-            else:
-                continue
-        return None, None, None, None, None
+                    return None, None, None, None, None  # can't create a DM with user
+            return config, current_user, report_room, source, dest
+
+        elif isinstance(msg.channel, discord.DMChannel):  # DM --> guild
+            if msg.author.id not in user_to_guild_dict:
+                return None, None, None, None, None  # it's in a PM, but that user isn't in any report rooms
+
+            source = msg.author.dm_channel
+            if not source:
+                source = await msg.author.create_dm()
+                if not source:
+                    return None, None, None, None, None  # can't create a DM with user
+
+            guild_id: str = user_to_guild_dict[msg.author.id]
+            config = self.bot.db['guilds'][guild_id]
+            dest = report_room = self.bot.get_channel(config['channel'])
+            current_user = msg.author
+            return config, current_user, report_room, source, dest
+
+        # for guild in self.bot.db['guilds']:
+        #     config = self.bot.db['guilds'][guild]
+        #     if not config['currentuser']:
+        #         continue
+        #     report_room = self.bot.get_channel(config['channel'])
+        #     current_user = self.bot.get_user(config['currentuser'])
+        #     if msg.channel == current_user.dm_channel:  # DM --> Report room
+        #         source = msg.author.dm_channel
+        #         source = msg.author.dm_channel
+        #         if not source:
+        #             source = await msg.author.create_dm()
+        #             if not source:
+        #                 return None, None, None, None, None
+        #         dest = report_room
+        #         return config, current_user, report_room, source, dest
+        #     elif msg.channel == report_room:  # Report room --> DM
+        #         source = report_room
+        #         dest = msg.author.dm_channel
+        #         if not dest:
+        #             dest = await msg.author.create_dm()
+        #             if not dest:
+        #                 return None, None, None, None, None
+        #         return config, current_user, report_room, source, dest
+        #     else:
+        #         continue
+        # return None, None, None, None, None
 
     # for first entering a user into the report room
     async def server_select(self, msg):
@@ -195,7 +225,8 @@ class Modbot(commands.Cog):
         for g in self.bot.db['guilds']:
             if msg.author.id in self.bot.db['guilds'][g]['waitinglist']:
                 guild = self.bot.get_guild(int(g))
-                self.bot.db['guilds'][g]['waitinglist'].remove(msg.author.id)
+                if not self.bot.db['guilds'][g]['currentuser']:
+                    self.bot.db['guilds'][g]['waitinglist'].remove(msg.author.id)
                 break
 
         if not guild:
@@ -228,6 +259,8 @@ class Modbot(commands.Cog):
                 except asyncio.TimeoutError:
                     await msg.channel.send("You've waited too long. Module closing.")
                     return
+                if resp.content.casefold() == 'cancel':
+                    return
                 guild_selection = re.findall("^\d{1,2}$", resp.content)
                 if guild_selection:
                     guild_selection = guild_selection[0]
@@ -251,9 +284,9 @@ class Modbot(commands.Cog):
         config = self.bot.db['guilds'][str(guild.id)]
         report_channel = self.bot.get_channel(config['channel'])
 
-
         # ####### IF SOMEONE IN THE ROOM ###########
         if config['currentuser']:
+            await self.bot.get_channel(SPAM_CH).send(f"{guild.id}, {config}, {config['waitinglist']}, {msg.author.id}, {msg.author.id in config['waitinglist']}")
             if msg.author.id in config['waitinglist']:
                 await msg.channel.send(
                     "The report room is not open yet. You are still on the waiting list. If it is urgent, "
@@ -278,6 +311,7 @@ class Modbot(commands.Cog):
 
         # ##### START THE ROOM #######
         config['currentuser'] = msg.author.id
+        self.bot.db['inreportroom'][str(guild.id)] = msg.author.id
 
         async def open_room():
             await report_channel.trigger_typing()
@@ -570,6 +604,8 @@ class Modbot(commands.Cog):
             for user in self.bot.db['guilds'][str(ctx.guild.id)]['waitinglist']:
                 if str(user) in self.bot.db['insetup']:
                     del(self.bot.db['insetup'][str(user)])
+        if str(ctx.guild.id) in self.bot.db['inreportroom']:
+            del(self.bot.db['inreportroom'][str(ctx.guild.id)])
         self.bot.db['guilds'][str(ctx.guild.id)] = {'channel': ctx.channel.id,
                                                     'currentuser': None,
                                                     'waitinglist': [],
