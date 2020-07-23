@@ -322,7 +322,7 @@ class Modbot(commands.Cog):
                        f"messages to this channel. Any messages you type will be sent to them.\n\nTo end this chat, " \
                        f"type `end` or `done`.\n\nTo *not* send a certain message, start the message with `_`. " \
                        f"For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent." \
-                       f"\n__{' '*70}__\n"
+                       f"\n**__{' '*70}__**\n"
                 await report_channel.send(text)
                 text = f">>> {msg.author.mention}: {msg.content}"
                 if len(text) > 2000:
@@ -463,10 +463,8 @@ class Modbot(commands.Cog):
             if msg.content.casefold() in ['end', 'done']:
                 await self.close_room(config, source, dest, report_room.guild, False)
                 return
-            if dest == msg.author.dm_channel:
-                cont = f">>> "
-                if len(config['mods']) >= 2:
-                    cont += f"**Moderator {config['mods'].index(msg.author.id) + 1}:** "
+            if isinstance(dest, discord.DMChannel):
+                cont = f">>> **Moderator {config['mods'].index(msg.author.id) + 1}:** "
             else:
                 cont = f">>> {msg.author.mention}: "
             splice = 2000 - len(cont)
@@ -513,8 +511,8 @@ class Modbot(commands.Cog):
     async def close_room(self, config, source, dest, guild, error):
         if not error:
             try:
-                await source.send("Thank you, I have closed the room.")
-                await dest.send("Thank you, I have closed the room.")
+                await source.send(f"**⠀\n⠀\n⠀\n__{' '*70}__**\n**Thank you, I have closed the room.**")
+                await dest.send(f"**⠀\n⠀\n⠀\n__{' '*70}__**\n**Thank you, I have closed the room.**")
             except discord.Forbidden:
                 pass
         else:
