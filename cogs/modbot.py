@@ -322,7 +322,7 @@ class Modbot(commands.Cog):
                        f"messages to this channel. Any messages you type will be sent to them.\n\nTo end this chat, " \
                        f"type `end` or `done`.\n\nTo *not* send a certain message, start the message with `_`. " \
                        f"For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent." \
-                       f"\n**__{' '*70}__**\n"
+                       f"\n**Report starts here\n__{' '*70}__**\n\n\n"
                 await report_channel.send(text)
                 text = f">>> {msg.author.mention}: {msg.content}"
                 if len(text) > 2000:

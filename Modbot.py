@@ -46,12 +46,6 @@ class Modbot(Bot):
         await self.get_channel(275879535977955330).send('Bot loaded')
         await self.change_presence(activity=discord.Game('DM me to talk to mods'))
 
-        for u in self.db['inpms'].copy():
-            user = self.get_user(int(u))
-            await user.send("NOTIFICATION: Sorry, but I had to restart. If you were in the middle of doing "
-                            "something please start over. It's possible some messages weren't sent.")
-        self.db['inpms'] = []
-
         for guild in self.db['guilds'].copy():
             if self.db['guilds'][guild]['currentuser']:
                 report_channel = self.get_channel(int(self.db['guilds'][guild]['channel']))
