@@ -447,9 +447,10 @@ class Modbot(commands.Cog):
     """Send message"""
     async def send_message(self, msg, config, current_user, report_room, source, dest):
         if msg.content:
-            if msg.content[0] in "_;.,":  # messages starting with _ or other bot prefixes
-                await msg.add_reaction('🔇')
-                return
+            for prefix in ['_', ';', '.', ',', '>>', '&']:
+                if msg.content.startswith(prefix):  # messages starting with _ or other bot prefixes
+                    await msg.add_reaction('🔇')
+                    return
         if msg.author.bot:
             if msg.author == msg.guild.me:
                 if msg.content.startswith('>>> '):
