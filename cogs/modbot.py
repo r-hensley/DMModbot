@@ -449,7 +449,10 @@ class Modbot(commands.Cog):
         if msg.content:
             for prefix in ['_', ';', '.', ',', '>>', '&']:
                 if msg.content.startswith(prefix):  # messages starting with _ or other bot prefixes
-                    await msg.add_reaction('🔇')
+                    try:
+                        await msg.add_reaction('🔇')
+                    except discord.NotFound:
+                        pass
                     return
         if msg.author.bot:
             if msg.author == msg.guild.me:
