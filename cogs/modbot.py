@@ -47,6 +47,7 @@ class Modbot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_result = None
+        self.recently_in_report_room = []  # users will be on this list for 10s after leaving room
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
@@ -86,7 +87,7 @@ class Modbot(commands.Cog):
 
         """PM Bot"""
         async def pm_modbot():
-            if not msg.guild:
+            if not msg.guild:  # in a PM
                 # a user wants to be removed from waiting list
                 if msg.content.casefold() == 'cancel':
                     for guild in self.bot.db['guilds']:
@@ -99,6 +100,9 @@ class Modbot(commands.Cog):
 
                 # starting a report, comes here if the user is not in server_select or in a report room already
                 if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
+                    if msg.author in self.bot.recently_in_report_room:
+                        await msg.author.send("You've recently left a report room. Please wait before joining again.")
+                        return
                     try:  # the user selects to which server they want to connect
                         self.bot.db['insetup'].append(msg.author.id)
                         guild: discord.Guild = await self.server_select(msg)
@@ -214,6 +218,8 @@ class Modbot(commands.Cog):
                         await msg.channel.send("Module closing.")
                         return
                     guild = shared_guilds[0]
+                    await reaction.message.remove_reaction("✅", self.bot.user)
+                    await reaction.message.remove_reaction("❌", self.bot.user)
                 else:
                     await msg.channel.send("We only share one guild, but that guild has not setup their report room"
                                            " yet. Please tell the mods to type `_setup` in some channel.")
@@ -402,6 +408,7 @@ class Modbot(commands.Cog):
 
     # for when the room is to be closed and the database reset
     # the error argument tells whether the room is being closed normally or after an error
+    # source is the DM channel, dest is the report room
     async def close_room(self, config, source, dest, guild, error):
         if not error:
             try:
@@ -434,6 +441,15 @@ class Modbot(commands.Cog):
                 report_room = self.bot.get_channel(config["channel"])
                 await report_room.send(f"I tried to message {user.name} to tell them the report room opened, but "
                                        f"I couldn't send them a message. I've removed them from the waiting list.")
+
+        if hasattr(source, "recipient"):
+            user = source.recipient
+        else:
+            user = dest.recipient
+        self.bot.recently_in_report_room.append(user)
+        await asyncio.sleep(10)
+        self.bot.recently_in_report_room.remove(user)
+
 
     # ############ OTHER GENERAL COMMANDS #################
 
