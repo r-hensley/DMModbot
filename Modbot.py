@@ -20,10 +20,13 @@ logging.basicConfig(level=logging.WARNING)
 # handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 # logger.addHandler(handler)
 
+intents = discord.Intents.default()
+intents.members = True
 
 class Modbot(Bot):
     def __init__(self):
-        super().__init__(description="Bot by Ryry013#9234", command_prefix='_', owner_id=202995638860906496)
+        super().__init__(description="Bot by Ryry013#9234", command_prefix='_', owner_id=202995638860906496,
+                         intents=intents)
         print('starting loading of jsons')
         with open(f"{dir_path}/modbot.json", "r") as read_file1:
             read_file1.seek(0)
@@ -33,7 +36,7 @@ class Modbot(Bot):
         with open(f"{dir_path}/database_backups/database_{date}.json", "w") as write_file:
             json.dump(self.db, write_file)
         for extension in ['cogs.modbot']:
-            try:  # in on_ready because if not I get tons of errors from on_message before bot loads
+            try:
                 self.load_extension(extension)
             except Exception as e:
                 print(f'Failed to load {extension}', file=sys.stderr)

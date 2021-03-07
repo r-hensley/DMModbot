@@ -68,27 +68,11 @@ class Modbot(commands.Cog):
         **Owner:** {guild.owner.mention} ({guild.owner.name}#{guild.owner.discriminator}))
         **Members:** {guild.member_count}
         **Channels:** {len(guild.text_channels)} text / {len(guild.voice_channels)} voice"""
-        # for channel in guild.text_channels:
-        #     try:
-        #         invite = await channel.create_invite(max_uses=1, reason="For bot owner Ryry013#9234")
-        #         msg += f"\n{invite.url}"
-        #         break
-        #     except discord.HTTPException:
-        #         pass
+
         await self.bot.get_user(202995638860906496).send(msg)
         await self.bot.get_user(202995638860906496).send("Channels: \n" +
                                                          '\n'.join([channel.name for channel in guild.channels]))
 
-        # msg_text = "Thanks for inviting me!  See a first-time setup guide here: " \
-        #            "https://github.com/ryry013/Rai/wiki/First-time-setup"
-        # if guild.system_channel:
-        #     if guild.system_channel.permissions_for(guild.me).send_messages:
-        #         await guild.system_channel.send(msg_text)
-        #         return
-        # for channel in guild.text_channels:
-        #     if channel.permissions_for(guild.me).send_messages:
-        #         await channel.send(msg_text)
-        #         return
 
     # main code is here
     @commands.Cog.listener()
@@ -190,32 +174,6 @@ class Modbot(commands.Cog):
             current_user = msg.author
             return config, current_user, report_room, source, dest
 
-        # for guild in self.bot.db['guilds']:
-        #     config = self.bot.db['guilds'][guild]
-        #     if not config['currentuser']:
-        #         continue
-        #     report_room = self.bot.get_channel(config['channel'])
-        #     current_user = self.bot.get_user(config['currentuser'])
-        #     if msg.channel == current_user.dm_channel:  # DM --> Report room
-        #         source = msg.author.dm_channel
-        #         source = msg.author.dm_channel
-        #         if not source:
-        #             source = await msg.author.create_dm()
-        #             if not source:
-        #                 return None, None, None, None, None
-        #         dest = report_room
-        #         return config, current_user, report_room, source, dest
-        #     elif msg.channel == report_room:  # Report room --> DM
-        #         source = report_room
-        #         dest = msg.author.dm_channel
-        #         if not dest:
-        #             dest = await msg.author.create_dm()
-        #             if not dest:
-        #                 return None, None, None, None, None
-        #         return config, current_user, report_room, source, dest
-        #     else:
-        #         continue
-        # return None, None, None, None, None
 
     # for first entering a user into the report room
     async def server_select(self, msg):
@@ -235,8 +193,28 @@ class Modbot(commands.Cog):
                                        "messaging me. Have a nice day.")
                 return
             elif len(shared_guilds) == 1:
-                guild = shared_guilds[0]
-                if str(guild.id) not in self.bot.db['guilds']:
+                if str(shared_guilds[0].id) in self.bot.db['guilds']:
+                    q_msg = await msg.channel.send(f"Do you need to enter the report room of the server "
+                                                   f"`{shared_guilds[0].name}` and make a report to the mods of that "
+                                                   f"server?")
+                    await q_msg.add_reaction("✅")
+                    await q_msg.add_reaction("❌")
+                    try:
+                        def check(reaction, user):
+                            if user == msg.author:
+                                if reaction.message.channel == msg.channel:
+                                    if str(reaction) in "✅❌":
+                                        return True
+
+                        reaction, user = await self.bot.wait_for('reaction_add', check=check, timeout=60.0)
+                    except asyncio.TimeoutError:
+                        await msg.channel.send("You've waited too long. Module closing.")
+                        return
+                    if str(reaction) == "❌":
+                        await msg.channel.send("Module closing.")
+                        return
+                    guild = shared_guilds[0]
+                else:
                     await msg.channel.send("We only share one guild, but that guild has not setup their report room"
                                            " yet. Please tell the mods to type `_setup` in some channel.")
                     return
@@ -330,6 +308,7 @@ class Modbot(commands.Cog):
                     await report_channel.send(text[2000:])
                 else:
                     await report_channel.send(text)
+                await msg.add_reaction('📨')
                 await msg.add_reaction('✅')
                 if msg.attachments:
                     for attachment in msg.attachments:
@@ -348,95 +327,6 @@ class Modbot(commands.Cog):
                                    " message.\n\nWhen you are done talking to the mods, please type `end` or `done` "
                                    "to close the chat.")
             return True
-
-            # def check(m):
-            #     cond1 = m.author == msg.author and m.channel == msg.channel  # message from OP in DMs
-            #     cond2 = m.channel == report_channel  # message from *someone* in report room
-            #     return cond1 or cond2
-            #
-            # finished_inner = False  # will become True if I have sent a notification saying the chat has been closed
-            # mods = []
-            #
-            # while True:
-            #     try:
-            #         resp = await self.bot.wait_for('message', check=check, timeout=21600.0)
-            #     except asyncio.TimeoutError:
-            #         cutoff_msg = "This chat has been inactive for a long time, so it has been closed. In the future, " \
-            #                      "type `end` or `done` to close it when you are done."
-            #         await report_channel.send(cutoff_msg)
-            #         await msg.channel.send(cutoff_msg)
-            #         finished_inner = True
-            #         break
-            #     if resp.content:
-            #         if resp.content[0] in "_;.,":  # messages starting with _
-            #             await resp.add_reaction('🔇')
-            #             continue
-            #     if resp.author.bot:
-            #         if resp.author == resp.guild.me:
-            #             if resp.content.startswith('>>> '):
-            #                 continue
-            #         await resp.add_reaction('🔇')
-            #         continue
-            #     if resp.author.id not in mods:
-            #         mods.append(resp.author.id)
-            #     if resp.channel == msg.channel:
-            #         dest = report_channel
-            #     else:
-            #         dest = msg.channel
-            #
-            #     if resp.content:
-            #         if resp.content.casefold() in ['end', 'done']:
-            #             await report_channel.send("Thank you, the room has been closed.")
-            #             await msg.channel.send("Thank you, the room has been closed.")
-            #             finished_inner = True
-            #             break
-            #         if dest == msg.channel:
-            #             cont = f">>> "
-            #             if len(mods) >= 2:
-            #                 cont += f"**Moderator {mods.index(resp.author.id) + 1}:** "
-            #         else:
-            #             cont = f">>> {msg.author.mention}: "
-            #         splice = 2000 - len(cont)
-            #         cont += resp.content[:splice]
-            #         if len(resp.content) > splice:
-            #             cont2 = f">>> ... {resp.content[splice:]}"
-            #         else:
-            #             cont2 = None
-            #     else:
-            #         cont = cont2 = None
-            #
-            #     try:
-            #         if cont and len(resp.embeds) == 1:
-            #             await dest.send(cont, embed=resp.embeds[0])
-            #         elif cont and not resp.embeds:
-            #             await dest.send(cont)
-            #
-            #         if len(resp.embeds) > 1:
-            #             for embed in resp.embeds:
-            #                 await dest.send(embed=embed)
-            #
-            #         if resp.attachments:
-            #             for attachment in resp.attachments:
-            #                 await dest.send(f">>> {attachment.url}")
-            #
-            #         if cont2:
-            #             await dest.send(cont2)
-            #
-            #     except discord.Forbidden:
-            #         try:
-            #             await report_channel.send("I couldn't send a message to the user (maybe they blocked me). "
-            #                                       "I have closed the chat.")
-            #         except discord.Forbidden:
-            #             pass
-            #
-            #         try:
-            #             await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
-            #                                    "of the report channel. I have closed this chat.")
-            #         except discord.Forbidden:
-            #             pass
-            #         finished_inner = True
-            #         break
-            # return finished_inner
 
         try:
             await open_room()  # maybe this should always be True
