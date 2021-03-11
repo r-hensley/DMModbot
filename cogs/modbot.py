@@ -11,10 +11,12 @@ from copy import deepcopy
 import shutil
 import json
 import sys
+import time
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 RYRY = 202995638860906496
 SPAM_CH = 275879535977955330
+REPORT_TIMEOUT = 30
 
 #              database structure
 # {
@@ -47,7 +49,7 @@ class Modbot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_result = None
-        self.recently_in_report_room = []  # users will be on this list for 10s after leaving room
+        self.recently_in_report_room = {} #dict w/ key ID and value of last left report room time
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
@@ -100,8 +102,10 @@ class Modbot(commands.Cog):
 
                 # starting a report, comes here if the user is not in server_select or in a report room already
                 if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
-                    if msg.author in self.bot.recently_in_report_room:
-                        await msg.author.send("You've recently left a report room. Please wait before joining again.")
+                    if (msg.author in self.bot.recently_in_report_room.keys() and time.time() - self.bot.recently_in_report_room[msg.author] < REPORT_TIMEOUT):
+                        time_remaining = time.time() - self.bot.recently_in_report_room[msg.author] #re-running the same calculation is kind of a no-no but whatever
+                        await msg.author.send(f"You've recently left a report room. Please wait {time_remaining} more seconds before joining again.\n"
+                                                "If your message was something like 'goodbye', 'thanks', or similar, we appreciate it, but it is not necessary to open another room.")
                         return
                     try:  # the user selects to which server they want to connect
                         self.bot.db['insetup'].append(msg.author.id)
@@ -446,9 +450,7 @@ class Modbot(commands.Cog):
             user = source.recipient
         else:
             user = dest.recipient
-        self.bot.recently_in_report_room.append(user)
-        await asyncio.sleep(10)
-        self.bot.recently_in_report_room.remove(user)
+        self.bot.recently_in_report_room[user] = time.time()
 
 
     # ############ OTHER GENERAL COMMANDS #################
