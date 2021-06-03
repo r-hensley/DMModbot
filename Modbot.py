@@ -49,11 +49,11 @@ class Modbot(Bot):
         await self.get_channel(275879535977955330).send('Bot loaded')
         await self.change_presence(activity=discord.Game('DM me to talk to mods'))
 
+        self.recently_in_report_room = {}
         for guild in self.db['guilds'].copy():
             if self.db['guilds'][guild]['currentuser']:
                 report_channel = self.get_channel(int(self.db['guilds'][guild]['channel']))
                 self.db['guilds'][guild]['currentuser'] = None
-                self.recently_in_report_room = []  # users will be on this list for 10s after leaving room
                 await report_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. If the "
                                           "user continues messaging they should be able to come right back in.")
 
