@@ -104,7 +104,8 @@ class Modbot(commands.Cog):
                 if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
                     if (msg.author in self.bot.recently_in_report_room.keys() and time.time() -
                             self.bot.recently_in_report_room[msg.author] < REPORT_TIMEOUT):
-                        time_remaining = time.time() - self.bot.recently_in_report_room[msg.author]
+                        time_remaining = int(REPORT_TIMEOUT -
+                                             (time.time() - self.bot.recently_in_report_room[msg.author]))
                         # re-running the same calculation is kind of a no-no but whatever
                         await msg.author.send(
                             f"You've recently left a report room. Please wait {time_remaining} more seconds before "
@@ -243,7 +244,10 @@ class Modbot(commands.Cog):
                     msg_embed += f"{i_guild.name}"
                     if index < len(shared_guilds) + 1:
                         msg_embed += f"\n`{index})` "
-                await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
+                try:
+                    await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
+                except AttributeError:
+                    return
                 try:
                     resp = await self.bot.wait_for('message',
                                                    check=lambda m: m.author == msg.author and m.channel == msg.channel,
@@ -275,6 +279,27 @@ class Modbot(commands.Cog):
     async def start_report_room(self, msg, guild):
         config = self.bot.db['guilds'][str(guild.id)]
         report_channel = self.bot.get_channel(config['channel'])
+
+        # #### SPECIAL STUFF FOR JP SERVER ####
+        # Turn away new users asking for a role
+        REPORT_ROOM_ID = 697862475579785216
+        JHO_ID = 189571157446492161
+        if guild.id == 189571157446492161:
+            member = guild.get_member(msg.author.id)
+            if guild.get_role(249695630606336000) in member.roles:  # new user role
+                for word in ['voice', 'role', 'locked', 'tag', 'lang', 'ボイス', 'チャンネル']:
+                    if word in msg.content:
+                        await member.send(f"In order to use the voice channels, you need a language tag first. "
+                                          f"Please state your native language in <#{JHO_ID}>.\n"
+                                          f"ボイスチャットを使うにはいずれかの言語ロールが必要です。 "
+                                          f"<#{JHO_ID}> にて母語を教えて下さい。")
+                        text = f"{str(msg.author.mention)} came to me with the following message:" \
+                               f"```{msg.content}```" \
+                               f"I assumed they were asking for language tag, so I told them to state their " \
+                               f"native language in JHO and blocked their request to open the report room."
+                        await guild.get_channel(REPORT_ROOM_ID).send(embed=discord.Embed(description=text,
+                                                                                         color=0xFF0000))
+                        return
 
         # ####### IF SOMEONE IN THE ROOM ###########
         if config['currentuser']:
@@ -405,8 +430,8 @@ class Modbot(commands.Cog):
 
         except discord.Forbidden:
             if dest == current_user.dm_channel:
-                await dest.send("I couldn't send a message to the user (maybe they blocked me). "
-                                "I have closed the chat.")
+                await msg.channel.send("I couldn't send a message to the user (maybe they blocked me). "
+                                       "I have closed the chat.")
 
             elif dest == report_room:
                 await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
