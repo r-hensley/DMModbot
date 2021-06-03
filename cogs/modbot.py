@@ -89,7 +89,7 @@ class Modbot(commands.Cog):
 
         """PM Bot"""
         async def pm_modbot():
-            if not msg.guild:  # in a PM
+            if isinstance(msg.channel, discord.DMChannel):  # in a PM
                 # a user wants to be removed from waiting list
                 if msg.content.casefold() == 'cancel':
                     for guild in self.bot.db['guilds']:
@@ -130,19 +130,19 @@ class Modbot(commands.Cog):
                         await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                         raise
 
-            # sending a message during a report
-            # this next function returns either five values or five "None" values
-            # it tries to find if a user messaged somewhere, which report room connection they're part of
-            config, current_user, report_room, source, dest = await self.find_current_guild(msg)
-            if config:  # basically, if it's not None
-                if not dest:  # me trying to fix the weird bug from this morning, config wasn't None but dest was None
-                    await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
-                                                                        f"{source}, {dest}")
-                try:
-                    await self.send_message(msg, config, current_user, report_room, source, dest)
-                except Exception:
-                    await self.close_room(config, source, dest, report_room.guild, True)
-                    raise
+                # sending a message during a report
+                # this next function returns either five values or five "None" values
+                # it tries to find if a user messaged somewhere, which report room connection they're part of
+                config, current_user, report_room, source, dest = await self.find_current_guild(msg)
+                if config:  # basically, if it's not None
+                    if not dest:  # config sometimes wasn't None but dest was None
+                        await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
+                                                                            f"{source}, {dest}")
+                    try:
+                        await self.send_message(msg, config, current_user, report_room, source, dest)
+                    except Exception:
+                        await self.close_room(config, source, dest, report_room.guild, True)
+                        raise
         await pm_modbot()
 
     # for finding out which report session a certain message belongs to, None if not part of anything
@@ -207,9 +207,12 @@ class Modbot(commands.Cog):
                 return
             elif len(shared_guilds) == 1:
                 if str(shared_guilds[0].id) in self.bot.db['guilds']:
-                    q_msg = await msg.channel.send(f"Do you need to enter the report room of the server "
-                                                   f"`{shared_guilds[0].name}` and make a report to the mods of that "
-                                                   f"server?")
+                    try:
+                        q_msg = await msg.channel.send(f"Do you need to enter the report room of the server "
+                                                       f"`{shared_guilds[0].name}` and make a report to the mods of"
+                                                       f" that server?")
+                    except AttributeError:
+                        return
                     await q_msg.add_reaction("✅")
                     await q_msg.add_reaction("❌")
                     try:
