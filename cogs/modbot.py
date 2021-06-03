@@ -102,10 +102,14 @@ class Modbot(commands.Cog):
 
                 # starting a report, comes here if the user is not in server_select or in a report room already
                 if msg.author.id not in self.bot.db['insetup'] + list(self.bot.db['inreportroom'].values()):
-                    if (msg.author in self.bot.recently_in_report_room.keys() and time.time() - self.bot.recently_in_report_room[msg.author] < REPORT_TIMEOUT):
-                        time_remaining = time.time() - self.bot.recently_in_report_room[msg.author] #re-running the same calculation is kind of a no-no but whatever
-                        await msg.author.send(f"You've recently left a report room. Please wait {time_remaining} more seconds before joining again.\n"
-                                                "If your message was something like 'goodbye', 'thanks', or similar, we appreciate it, but it is not necessary to open another room.")
+                    if (msg.author in self.bot.recently_in_report_room.keys() and time.time() -
+                            self.bot.recently_in_report_room[msg.author] < REPORT_TIMEOUT):
+                        time_remaining = time.time() - self.bot.recently_in_report_room[msg.author]
+                        # re-running the same calculation is kind of a no-no but whatever
+                        await msg.author.send(
+                            f"You've recently left a report room. Please wait {time_remaining} more seconds before "
+                            f"joining again.\nIf your message was something like 'goodbye', 'thanks', or similar, "
+                            f"we appreciate it, but it is not necessary to open another room.")
                         return
                     try:  # the user selects to which server they want to connect
                         self.bot.db['insetup'].append(msg.author.id)
@@ -274,7 +278,6 @@ class Modbot(commands.Cog):
 
         # ####### IF SOMEONE IN THE ROOM ###########
         if config['currentuser']:
-            await self.bot.get_channel(SPAM_CH).send(f"{guild.id}, {config}, {config['waitinglist']}, {msg.author.id}, {msg.author.id in config['waitinglist']}")
             if msg.author.id in config['waitinglist']:
                 await msg.channel.send(
                     "The report room is not open yet. You are still on the waiting list. If it is urgent, "
