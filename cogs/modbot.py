@@ -22,7 +22,7 @@ REPORT_TIMEOUT = 30
 # {
 #     "prefix": {},
 #     "insetup": [USER1_ID, USER2_ID],
-#     "inreportroom": {GUILD_ID: USER_ID, GUILD_ID: USER_ID},
+#     "inreportroom": {GUILD_ID: USER_ID, GUILD_ID: USER_ID, ...},
 #     "guilds": {
 #         "123446036178059265": {
 #             "channel": 123459535977955330,
@@ -38,6 +38,7 @@ REPORT_TIMEOUT = 30
 #     "modrole": {}
 # }
 
+
 def is_admin(ctx):
     if not ctx.guild:
         return
@@ -49,14 +50,14 @@ class Modbot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_result = None
-        self.recently_in_report_room = {} #dict w/ key ID and value of last left report room time
+        self.recently_in_report_room = {}  # dict w/ key ID and value of last left report room time
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
         print(f"Running {ctx.command.name}")
 
     @commands.Cog.listener()
-    async def on_typing(self, channel, user, when):
+    async def on_typing(self, channel, user, _):
         config = self.bot.db['guilds']
         for guild in config:
             if user.id == config[guild]['currentuser'] and type(channel) == discord.DMChannel:
@@ -75,7 +76,6 @@ class Modbot(commands.Cog):
         await self.bot.get_user(202995638860906496).send(msg)
         await self.bot.get_user(202995638860906496).send("Channels: \n" +
                                                          '\n'.join([channel.name for channel in guild.channels]))
-
 
     # main code is here
     @commands.Cog.listener()
@@ -189,7 +189,7 @@ class Modbot(commands.Cog):
             current_user = msg.author
             return config, current_user, report_room, source, dest
 
-
+    #
     # for first entering a user into the report room
     async def server_select(self, msg):
         shared_guilds = sorted([g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
@@ -218,9 +218,9 @@ class Modbot(commands.Cog):
                     await q_msg.add_reaction("✅")
                     await q_msg.add_reaction("❌")
                     try:
-                        def check(reaction, user):
-                            if user == msg.author:
-                                if reaction.message.channel == msg.channel:
+                        def check(reaction_check, user_check):
+                            if user_check == msg.author:
+                                if reaction_check.message.channel == msg.channel:
                                     if str(reaction) in "✅❌":
                                         return True
 
@@ -262,7 +262,7 @@ class Modbot(commands.Cog):
                     return
                 if resp.content.casefold() == 'cancel':
                     return
-                guild_selection = re.findall("^\d{1,2}$", resp.content)
+                guild_selection = re.findall(r"^\d{1,2}$", resp.content)
                 if guild_selection:
                     guild_selection = guild_selection[0]
                     try:
@@ -287,23 +287,22 @@ class Modbot(commands.Cog):
 
         # #### SPECIAL STUFF FOR JP SERVER ####
         # Turn away new users asking for a role
-        REPORT_ROOM_ID = 697862475579785216
-        JHO_ID = 189571157446492161
         if guild.id == 189571157446492161:
+            report_room = guild.get_channel(697862475579785216)
+            jho = guild.get_channel(189571157446492161)
             member = guild.get_member(msg.author.id)
             if guild.get_role(249695630606336000) in member.roles:  # new user role
                 for word in ['voice', 'role', 'locked', 'tag', 'lang', 'ボイス', 'チャンネル']:
                     if word in msg.content:
                         await member.send(f"In order to use the voice channels, you need a language tag first. "
-                                          f"Please state your native language in <#{JHO_ID}>.\n"
+                                          f"Please state your native language in {jho.mention}.\n"
                                           f"ボイスチャットを使うにはいずれかの言語ロールが必要です。 "
-                                          f"<#{JHO_ID}> にて母語を教えて下さい。")
+                                          f"{jho.mention} にて母語を教えて下さい。")
                         text = f"{str(msg.author.mention)} came to me with the following message:" \
                                f"```{msg.content}```" \
                                f"I assumed they were asking for language tag, so I told them to state their " \
                                f"native language in JHO and blocked their request to open the report room."
-                        await guild.get_channel(REPORT_ROOM_ID).send(embed=discord.Embed(description=text,
-                                                                                         color=0xFF0000))
+                        await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
                         return
 
         # ####### IF SOMEONE IN THE ROOM ###########
@@ -339,18 +338,18 @@ class Modbot(commands.Cog):
             await msg.author.dm_channel.trigger_typing()
             await asyncio.sleep(3)
             try:
-                text = f"@here The user {msg.author.mention} has entered the report room. I'll relay any of their " \
-                       f"messages to this channel. Any messages you type will be sent to them.\n\nTo end this chat, " \
-                       f"type `end` or `done`.\n\nTo *not* send a certain message, start the message with `_`. " \
+                entry_text = f"@here The user {msg.author.mention} has entered the report room. I'll relay any of " \
+                       f"their messages to this channel. Any messages you type will be sent to them.\n\nTo end this " \
+                       f"chat, type `end` or `done`.\n\nTo *not* send a certain message, start the message with `_`. " \
                        f"For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent." \
                        f"\n**Report starts here\n__{' '*70}__**\n\n\n"
-                await report_channel.send(text)
-                text = f">>> {msg.author.mention}: {msg.content}"
-                if len(text) > 2000:
-                    await report_channel.send(text[:2000])
-                    await report_channel.send(text[2000:])
+                await report_channel.send(entry_text)
+                user_text = f">>> {msg.author.mention}: {msg.content}"
+                if len(user_text) > 2000:
+                    await report_channel.send(user_text[:2000])
+                    await report_channel.send(user_text[2000:])
                 else:
-                    await report_channel.send(text)
+                    await report_channel.send(user_text)
                 await msg.add_reaction('📨')
                 await msg.add_reaction('✅')
                 if msg.attachments:
@@ -414,15 +413,7 @@ class Modbot(commands.Cog):
             cont = cont2 = None
 
         try:
-            if cont and len(msg.embeds) == 1:
-                try:
-                    await dest.send(cont, embed=msg.embeds[0])
-                except discord.Forbidden:
-                    await self.close_room(config, source, dest, report_room.guild, True)
-            elif cont and not msg.embeds:
-                await dest.send(cont)
-
-            if len(msg.embeds) > 1:
+            if len(msg.embeds) >= 1:
                 for embed in msg.embeds:
                     await dest.send(embed=embed)
 
@@ -430,8 +421,17 @@ class Modbot(commands.Cog):
                 for attachment in msg.attachments:
                     await dest.send(f">>> {attachment.url}")
 
+            if cont:
+                try:
+                    await dest.send(cont)
+                except discord.Forbidden:
+                    await self.close_room(config, source, dest, report_room.guild, True)
+
             if cont2:
-                await dest.send(cont2)
+                try:
+                    await dest.send(cont2)
+                except discord.Forbidden:
+                    await self.close_room(config, source, dest, report_room.guild, True)
 
         except discord.Forbidden:
             if dest == current_user.dm_channel:
@@ -466,15 +466,15 @@ class Modbot(commands.Cog):
         config['currentuser'] = None
 
         for u in config['waitinglist']:
+            user = self.bot.get_user(int(u))
+            if not user:
+                config['waitinglist'].remove(u)
+                continue
+
             try:
-                user = self.bot.get_user(int(u))
-                if not user:
-                    config['waitinglist'].remove(u)
-                    continue
                 await user.send("The report room has opened up. Please try messaging again, or type `cancel` to "
                                 "remove yourself from the list.")
             except discord.Forbidden:
-                config['waitinglist'].remove(u)
                 report_room = self.bot.get_channel(config["channel"])
                 await report_room.send(f"I tried to message {user.name} to tell them the report room opened, but "
                                        f"I couldn't send them a message. I've removed them from the waiting list.")
@@ -485,8 +485,9 @@ class Modbot(commands.Cog):
             user = dest.recipient
         self.bot.recently_in_report_room[user] = time.time()
 
-
+    #
     # ############ OTHER GENERAL COMMANDS #################
+    #
 
     @commands.command()
     async def invite(self, ctx):
@@ -600,7 +601,8 @@ class Modbot(commands.Cog):
         else:
             await ctx.send('**`SUCCESS`**', delete_after=5.0)
 
-    def cleanup_code(self, content):
+    @staticmethod
+    def cleanup_code(content):
         """Automatically removes code blocks from the code."""
         # remove triple quotes + py\n
         if content.startswith("```") and content.endswith("```"):
@@ -646,7 +648,7 @@ class Modbot(commands.Cog):
             value = stdout.getvalue()
             try:
                 await ctx.message.add_reaction('\u2705')
-            except:
+            except discord.Forbidden:
                 pass
 
             if ret is None:
@@ -670,7 +672,8 @@ class Modbot(commands.Cog):
         except discord.NotFound:
             pass
 
-    async def dump_json(self, ctx):
+    @staticmethod
+    async def dump_json(ctx):
         db_copy = deepcopy(ctx.bot.db)
         shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
         shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
@@ -715,6 +718,7 @@ class Modbot(commands.Cog):
         for guild in self.bot.db['guilds']:
             t += f"{guild}: {self.bot.db['guilds'][guild]}\n"
         await ctx.send(t)
+
 
 def setup(bot):
     bot.add_cog(Modbot(bot))
