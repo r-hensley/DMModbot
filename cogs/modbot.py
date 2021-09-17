@@ -89,6 +89,8 @@ class Modbot(commands.Cog):
 
         """PM Bot"""
         async def pm_modbot():
+            if not isinstance(msg.channel, discord.DMChannel) and not isinstance(msg.channel, discord.TextChannel):
+                return  # because of new threads
             if isinstance(msg.channel, discord.DMChannel):  # in a PM
                 # a user wants to be removed from waiting list
                 if msg.content.casefold() == 'cancel':
@@ -130,19 +132,19 @@ class Modbot(commands.Cog):
                         await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                         raise
 
-                # sending a message during a report
-                # this next function returns either five values or five "None" values
-                # it tries to find if a user messaged somewhere, which report room connection they're part of
-                config, current_user, report_room, source, dest = await self.find_current_guild(msg)
-                if config:  # basically, if it's not None
-                    if not dest:  # config sometimes wasn't None but dest was None
-                        await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
-                                                                            f"{source}, {dest}")
-                    try:
-                        await self.send_message(msg, config, current_user, report_room, source, dest)
-                    except Exception:
-                        await self.close_room(config, source, dest, report_room.guild, True)
-                        raise
+            # sending a message during a report
+            # this next function returns either five values or five "None" values
+            # it tries to find if a user messaged somewhere, which report room connection they're part of
+            config, current_user, report_room, source, dest = await self.find_current_guild(msg)
+            if config:  # basically, if it's not None
+                if not dest:  # config sometimes wasn't None but dest was None
+                    await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
+                                                                        f"{source}, {dest}")
+                try:
+                    await self.send_message(msg, config, current_user, report_room, source, dest)
+                except Exception:
+                    await self.close_room(config, source, dest, report_room.guild, True)
+                    raise
         await pm_modbot()
 
     # for finding out which report session a certain message belongs to, None if not part of anything
@@ -502,8 +504,18 @@ class Modbot(commands.Cog):
             if not channel:
                 await ctx.send("Invalid ID")
                 return
-        await channel.send(f"Message from the mods of {ctx.guild.name}: {msg}")
-        await ctx.message.add_reaction("✅")
+        try:
+            await channel.send(f"Message from the mods of {ctx.guild.name}: {msg}")
+        except discord.Forbidden:
+            try:
+                await ctx.send(f"I can't send messages to that user.")
+            except discord.Forbidden:
+                pass
+        else:
+            try:
+                await ctx.message.add_reaction("✅")
+            except discord.Forbidden:
+                pass
 
     # ############ ADMIN COMMANDS #################
 
