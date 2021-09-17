@@ -1,3 +1,5 @@
+from typing import Optional, Union
+
 import discord
 from discord.ext import commands
 import asyncio
@@ -18,24 +20,39 @@ RYRY = 202995638860906496
 SPAM_CH = 275879535977955330
 REPORT_TIMEOUT = 30
 
-#              database structure
+INSTRUCTIONS = """・`end` or `done` - Finish the current report.
+・`_setup` - Reset the room completely (if there's a bug).
+・`_waitinglist` - View the waiting list
+・`_clear` - Clear the waiting list
+・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you want a user to come 
+　to the report room or send an official mod message to a channel.
+・`_not_anonymous` - Type this during a report session to reveal moderator names for future messages. You can 
+　enter it again to return to anonymity at any time during the session, and it'll be automatically reset to default   
+　anonymity after the session ends."""
+
+# database structure
 # {
+
 #     "prefix": {},
 #     "insetup": [USER1_ID, USER2_ID],
-#     "inreportroom": {GUILD_ID: USER_ID, GUILD_ID: USER_ID, ...},
+#     "inreportroom": {GUILD_ID: USER_ID, ...},
+#     "modrole": {GUILD_ID: CHANNEL_ID, ...}
+
 #     "guilds": {
 #         "123446036178059265": {
 #             "channel": 123459535977955330,
-#             "currentuser": null,
-#             "waitinglist": []
+#             "currentuser": USER3_ID,
+#             "waitinglist": [USER4_ID, USER5_ID, ...],
+#             "not_anonymous" = False  # by default is False, can be temporarily set to True by ;not_anonymous
 #         },
 #         "123538819743432704": {
 #             "channel": 12344015014551573,
 #             "currentuser": null,
-#             "waitinglist": []
+#             "waitinglist": [],
+#             "not_anonymous" = False
 #         }
 #     },
-#     "modrole": {}
+
 # }
 
 
@@ -141,6 +158,7 @@ class Modbot(commands.Cog):
                     await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
                                                                         f"{source}, {dest}")
                 try:
+
                     await self.send_message(msg, config, current_user, report_room, source, dest)
                 except Exception:
                     await self.close_room(config, source, dest, report_room.guild, True)
@@ -155,7 +173,7 @@ class Modbot(commands.Cog):
         if msg.guild:  # guild --> DM
             if str(msg.guild.id) not in self.bot.db['guilds']:
                 return None, None, None, None, None  # a message in a guild not registered for a report room
-            config = self.bot.db['guilds'][str(msg.guild.id)]
+            config: dict = self.bot.db['guilds'][str(msg.guild.id)]
             if msg.channel.id != config['channel']:
                 return None, None, None, None, None  # a message in a guild, but outside report room
             if str(msg.guild.id) not in guild_to_user_dict:
@@ -163,10 +181,12 @@ class Modbot(commands.Cog):
 
             # now for sure you're messaging in the report room of a guild with an active report happening
 
-            current_user = self.bot.get_user(guild_to_user_dict[str(msg.guild.id)])
+            current_user: discord.User = self.bot.get_user(guild_to_user_dict[str(msg.guild.id)])
 
-            source = report_room = self.bot.get_channel(config['channel'])
-            dest = current_user.dm_channel
+            source: discord.TextChannel = self.bot.get_channel(config['channel'])
+            report_room = source
+
+            dest: discord.DMChannel = current_user.dm_channel
             if not dest:
                 dest = await current_user.create_dm()
                 if not dest:
@@ -177,7 +197,7 @@ class Modbot(commands.Cog):
             if msg.author.id not in user_to_guild_dict:
                 return None, None, None, None, None  # it's in a PM, but that user isn't in any report rooms
 
-            source = msg.author.dm_channel
+            source: discord.DMChannel = msg.author.dm_channel
             if not source:
                 source = await msg.author.create_dm()
                 if not source:
@@ -185,7 +205,8 @@ class Modbot(commands.Cog):
 
             guild_id: str = user_to_guild_dict[msg.author.id]
             config = self.bot.db['guilds'][guild_id]
-            dest = report_room = self.bot.get_channel(config['channel'])
+            dest: discord.TextChannel = self.bot.get_channel(config['channel'])
+            report_room = dest
             current_user = msg.author
             return config, current_user, report_room, source, dest
 
@@ -342,7 +363,7 @@ class Modbot(commands.Cog):
                        f"their messages to this channel. Any messages you type will be sent to them.\n\nTo end this " \
                        f"chat, type `end` or `done`.\n\nTo *not* send a certain message, start the message with `_`. " \
                        f"For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent." \
-                       f"\n**Report starts here\n__{' '*70}__**\n\n\n"
+                       f"\n**Report starts here\n__{' '*70}__**\n\n\n⠀"  # invisible character at end of this line
                 await report_channel.send(entry_text)
                 user_text = f">>> {msg.author.mention}: {msg.content}"
                 if len(user_text) > 2000:
@@ -377,7 +398,13 @@ class Modbot(commands.Cog):
             raise
 
     """Send message"""
-    async def send_message(self, msg, config, current_user, report_room, source, dest):
+    async def send_message(self,
+                           msg: discord.Message,
+                           config: dict,
+                           current_user: discord.User,
+                           report_room: discord.TextChannel,
+                           source: Union[discord.TextChannel, discord.DMChannel],
+                           dest: Union[discord.TextChannel, discord.DMChannel]):
         if msg.content:
             for prefix in ['_', ';', '.', ',', '>>', '&']:
                 if msg.content.startswith(prefix):  # messages starting with _ or other bot prefixes
@@ -402,7 +429,11 @@ class Modbot(commands.Cog):
                 await self.close_room(config, source, dest, report_room.guild, False)
                 return
             if isinstance(dest, discord.DMChannel):
-                cont = f">>> **Moderator {config['mods'].index(msg.author.id) + 1}:** "
+                cont = f">>> **Moderator {config['mods'].index(msg.author.id) + 1}"
+                if config.setdefault('not_anonymous', False):
+                    cont += f" ({msg.author.mention}):** "
+                else:
+                    cont += ":** "
             else:
                 cont = f">>> {msg.author.mention}: "
             splice = 2000 - len(cont)
@@ -466,6 +497,7 @@ class Modbot(commands.Cog):
             del(self.bot.db['inreportroom'][str(guild.id)])
         config['mods'] = []
         config['currentuser'] = None
+        config['not_anonymous'] = False
 
         for u in config['waitinglist']:
             user = self.bot.get_user(int(u))
@@ -567,7 +599,9 @@ class Modbot(commands.Cog):
                                                     'waitinglist': [],
                                                     'mods': []}
         await ctx.send(f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
-                       f"their messages here.")
+                       f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
+                       f"on helpful commands for the bot")
+        await ctx.send(INSTRUCTIONS)
         await self.dump_json(ctx)
 
     @commands.command()
@@ -587,7 +621,43 @@ class Modbot(commands.Cog):
         await ctx.send(f"Set the mod role to {mod_role.name} ({mod_role.id})")
         await self.dump_json(ctx)
 
+    @commands.command(aliases=['not_anon', 'non_anonymous', 'non_anon', 'reveal'])
+    @commands.check(is_admin)
+    async def not_anonymous(self, ctx):
+        """This command will REVEAL moderator names to the user for the current report session."""
+        config = self.bot.db['guilds'][str(ctx.guild.id)]
+        not_anon = config.setdefault('not_anonymous', False)
+
+        if not not_anon:  # default option, moderators are still anonymous
+            config['not_anonymous'] = True
+            await ctx.send("In future messages for this report session, your names will be revealed to the reporter. "
+                           f"Type `{ctx.message.content}` to make your names anonymous again. "
+                           "When this report ends, the setting will be reset and "
+                           "in the next report you will be anonymous again.")
+        else:
+            config['not_anonymous'] = False
+            await ctx.send("You are now once again anonymous. If you sent any messages since the last time someone "
+                           "inputted the command, the reporter will have been shown your username.")
+
+    #
     # ########### OWNER COMMANDS ####################
+    #
+
+    @commands.command()
+    @commands.is_owner()
+    async def sendtoall(self, ctx, *, msg):
+        config = self.bot.db['guilds']
+        for guild in config:
+            report_room = self.bot.get_channel(config[guild]['channel'])
+            if report_room:
+                try:
+                    await report_room.send(msg)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+        try:
+            await ctx.message.add_reaction('✅')
+        except (discord.HTTPException, discord.Forbidden):
+            pass
 
     @commands.command(hidden=True)
     @commands.is_owner()
