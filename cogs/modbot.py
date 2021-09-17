@@ -392,8 +392,10 @@ class Modbot(commands.Cog):
                     return
             await msg.add_reaction('🔇')
             return
-        if msg.author.id not in config['mods']:
-            config['mods'].append(msg.author.id)
+
+        if isinstance(dest, discord.DMChannel):  # message is from report channel >> DMChannel
+            if msg.author.id not in config['mods']:
+                config['mods'].append(msg.author.id)  # to be used later to specify Moderator 1, Moderator 2, etc
 
         if msg.content:
             if msg.content.casefold() in ['end', 'done']:
