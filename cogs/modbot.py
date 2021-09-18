@@ -242,7 +242,7 @@ class Modbot(commands.Cog):
                         def check(reaction_check, user_check):
                             if user_check == msg.author:
                                 if reaction_check.message.channel == msg.channel:
-                                    if str(reaction) in "✅❌":
+                                    if str(reaction_check) in "✅❌":
                                         return True
 
                         reaction, user = await self.bot.wait_for('reaction_add', check=check, timeout=60.0)
@@ -623,8 +623,10 @@ class Modbot(commands.Cog):
 
     @commands.command(aliases=['not_anon', 'non_anonymous', 'non_anon', 'reveal'])
     @commands.check(is_admin)
-    async def not_anonymous(self, ctx):
+    async def not_anonymous(self, ctx, *, no_args_allowed=None):
         """This command will REVEAL moderator names to the user for the current report session."""
+        if no_args_allowed:
+            return  # to prevent someone unintentionally calling this command like "_reveal his face"
         config = self.bot.db['guilds'][str(ctx.guild.id)]
         not_anon = config.setdefault('not_anonymous', False)
 
