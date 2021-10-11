@@ -513,6 +513,14 @@ class Modbot(commands.Cog):
                 await report_room.send(f"I tried to message {user.name} to tell them the report room opened, but "
                                        f"I couldn't send them a message. I've removed them from the waiting list.")
 
+        if config['waitinglist']:
+            notif_msg = "ℹ️ I've notified the users on the waiting list that the room is now open. Type " \
+                        "`_waitinglist` to view the waiting list, or `_clear` to clear it."
+            if isinstance(source, discord.TextChannel):
+                await source.send(notif_msg)
+            elif isinstance(dest, discord.TextChannel):
+                await dest.send(notif_msg)
+
         if hasattr(source, "recipient"):
             user = source.recipient
         else:
