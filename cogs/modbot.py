@@ -385,10 +385,14 @@ class Modbot(commands.Cog):
                                        " setup command again.")
                 return True
 
-            await msg.channel.send("You are now connected to the report room. Any messages you send will be relayed "
-                                   "there, and you'll receive messages from the mods. Also, I've sent your above"
-                                   " message.\n\nWhen you are done talking to the mods, please type `end` or `done` "
-                                   "to close the chat.")
+            await msg.channel.send(embed=discord.Embed(
+                description="You are now connected to the moderators of the server, and I've sent your above "
+                            "message. The moderators will see any messages or images you send,"
+                            " and you'll receive messages from the mods too. It may take a while for the moderators "
+                            "to see your report, so please be patient. \n\n"
+                            "When you are done talking to the mods, please type `end` or `done`, and then "
+                            "the chat will close.",
+                color=0x00FF00))
             return True
 
         try:
