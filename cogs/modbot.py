@@ -145,7 +145,10 @@ class Modbot(commands.Cog):
                             await self.start_report_room(msg, guild)  # this should enter them into the report room
                         return  # if it worked
                     except Exception:
-                        del(self.bot.db['inreportroom'][str(guild.id)])
+                        try:
+                            del(self.bot.db['inreportroom'][str(guild.id)])
+                        except KeyError:
+                            pass
                         await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                         raise
 
@@ -355,6 +358,8 @@ class Modbot(commands.Cog):
         self.bot.db['inreportroom'][str(guild.id)] = msg.author.id
 
         async def open_room():
+            if not msg.author.dm_channel:
+                await msg.author.create_dm()
             await report_channel.trigger_typing()
             await msg.author.dm_channel.trigger_typing()
             await asyncio.sleep(3)
