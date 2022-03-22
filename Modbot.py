@@ -1,6 +1,5 @@
 # -*- coding: utf8 -*-
 import logging
-from abc import ABC
 
 import discord
 from discord.ext.commands import Bot
@@ -27,8 +26,6 @@ logging.basicConfig(format=FORMAT, level=logging.INFO)
 #     mode='a')
 # handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 # logger.addHandler(handler)
-
-print(discord.__version__)
 
 # noinspection lines to fix pycharm error saying Intents doesn't have members and Intents is read-only
 intents = discord.Intents.default()
