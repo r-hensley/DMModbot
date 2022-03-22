@@ -1,6 +1,5 @@
 # -*- coding: utf8 -*-
 import logging
-from abc import ABC
 
 import discord
 from discord.ext.commands import Bot
