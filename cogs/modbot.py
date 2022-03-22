@@ -145,7 +145,10 @@ class Modbot(commands.Cog):
                             await self.start_report_room(msg, guild)  # this should enter them into the report room
                         return  # if it worked
                     except Exception:
-                        del(self.bot.db['inreportroom'][str(guild.id)])
+                        try:
+                            del(self.bot.db['inreportroom'][str(guild.id)])
+                        except KeyError:
+                            pass
                         await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                         raise
 
@@ -158,7 +161,6 @@ class Modbot(commands.Cog):
                     await self.bot.get_channel(554572239836545074).send(f"{config}, {current_user}, {report_room},"
                                                                         f"{source}, {dest}")
                 try:
-
                     await self.send_message(msg, config, current_user, report_room, source, dest)
                 except Exception:
                     await self.close_room(config, source, dest, report_room.guild, True)
@@ -356,7 +358,10 @@ class Modbot(commands.Cog):
 
         async def open_room():
             await report_channel.trigger_typing()
-            await msg.author.dm_channel.trigger_typing()
+            dm_channel = msg.author.dm_channel
+            if not dm_channel:
+                dm_channel = await msg.author.create_dm()
+            await dm_channel.trigger_typing()
             await asyncio.sleep(3)
             try:
                 entry_text = f"@here The user {msg.author.mention} has entered the report room. I'll relay any of " \
