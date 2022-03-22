@@ -196,8 +196,6 @@ class Modbot(commands.Cog):
         if msg.guild:  # guild --> DM
             if msg.guild.id not in self.bot.db['guilds']:
                 return None  # a message in a guild not registered for a report room
-            if msg.channel.id not in self.bot.db['reports']:
-                return None  # Not in active threads
             thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
             if msg.channel.id not in thread_id_to_thread_info:
                 return None # Message not sent in one of the active threads
@@ -319,7 +317,6 @@ class Modbot(commands.Cog):
         return guild
 
     async def start_report_room(self, msg: discord.Message, guild: discord.Guild):
-        print("srt")
         guild_config = self.bot.db['guilds'][guild.id]
         report_channel = self.bot.get_channel(guild_config['channel'])
 
@@ -506,12 +503,10 @@ To *not* send a certain message, start the message with `_`. " For example, `Hel
     async def close_room(self, open_report: OpenReport, error):
         await self.notify_close_room(open_report.source, open_report.dest, error)
         thread = self.bot.get_channel(open_report.thread_info['thread_id'])
-        if thread:
-            await thread.edit(archived=True)
-
         if open_report.user.id in self.bot.db['reports']:
             del self.bot.db['reports'][open_report.user.id]
-
+        if thread:
+            await thread.edit(archived=True)
         self.bot.recently_in_report_room[open_report.user.id] = time.time()
 
     #
@@ -549,14 +544,9 @@ To *not* send a certain message, start the message with `_`. " For example, `Hel
 
     # ############ ADMIN COMMANDS #################
     @commands.command()
-    async def ping(self, ctx):
-        """Clears the waiting list"""
-        await ctx.send("pong")
-
-    @commands.command()
     @commands.check(is_admin)
     async def clear(self, ctx):
-        """Clears the waiting list"""
+        """Clears the server state """
         if ctx.guild.id not in self.bot.db['guilds']:
             return
         for user_id, thread_info in self.bot.db['reports'].items():
@@ -569,10 +559,11 @@ To *not* send a certain message, start the message with `_`. " For example, `Hel
     @commands.check(is_admin)
     async def setup(self, ctx):
         """Sets the current channel as the report room, or resets the report module"""
-        if ctx.guild.id not in self.bot.db['guilds']:
-            self.bot.db['guilds'] = { 'mod_role': None }
-        guild_config = self.bot.db['guilds'][ctx.guild.id]
-        guild_config[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role'] }
+        guilds = self.bot.db['guilds']
+        if ctx.guild.id not in guilds:
+            guilds[ctx.guild.id] = { 'mod_role': None }
+        guild_config = guilds[ctx.guild.id]
+        guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role'] }
         await ctx.send(f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
                        f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
                        f"on helpful commands for the bot")
@@ -653,7 +644,7 @@ To *not* send a certain message, start the message with `_`. " For example, `Hel
         except discord.Forbidden:
             pass
         try:
-            self.bot.reload_extension(f'cogs.{cog}')
+            await self.bot.reload_extension(f'cogs.{cog}')
         except Exception as e:
             await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
         else:
@@ -733,9 +724,12 @@ To *not* send a certain message, start the message with `_`. " For example, `Hel
     @staticmethod
     async def dump_json(ctx):
         db_copy = deepcopy(ctx.bot.db)
-        shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
-        shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
-        shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
+        if os.path.exists(f'{dir_path}/modbot_3.json'):
+            shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
+        if os.path.exists(f'{dir_path}/modbot_2.json'):
+            shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
+        if os.path.exists(f'{dir_path}/modbot.json'):
+            shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
         with open(f'{dir_path}/modbot_temp.json', 'w') as write_file:
             json.dump(int_keys_to_str_keys(db_copy), write_file, indent=4)
         shutil.copy(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')

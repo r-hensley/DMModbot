@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.WARNING)
 intents = discord.Intents.default()
 intents.members = True
 intents.typing = True
-intents.messages = True
+intents.message_content = True
 
 class Modbot(Bot):
     def __init__(self):
