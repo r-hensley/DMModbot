@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import thread
 from typing import Optional, Union
 
@@ -90,8 +91,7 @@ class Modbot(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
-        print(f"Running {ctx.command.name}")
-
+        pass
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
         if type(channel) != discord.DMChannel:
@@ -145,6 +145,7 @@ class Modbot(commands.Cog):
 
         if self.bot.db['pause']:
             if msg.author.id == self.bot.owner_id and msg.content != "_pause":
+                logging.info("Return statement reached", "_pause return statement")
                 return
 
         """PM Bot"""
@@ -198,7 +199,7 @@ class Modbot(commands.Cog):
                 return None  # a message in a guild not registered for a report room
             thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
             if msg.channel.id not in thread_id_to_thread_info:
-                return None # Message not sent in one of the active threads
+                return None  # Message not sent in one of the active threads
             
             thread_info = thread_id_to_thread_info[msg.channel.id]
 

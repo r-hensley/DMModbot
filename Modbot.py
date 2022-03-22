@@ -1,5 +1,7 @@
 # -*- coding: utf8 -*-
 import logging
+from abc import ABC
+
 import discord
 from discord.ext.commands import Bot
 from discord.ext import commands
@@ -7,13 +9,16 @@ import sys
 import traceback
 import json
 from datetime import datetime
-import config
 from cogs.utils.db_utils import str_keys_to_int_keys, convert_old_db, int_keys_to_str_keys
+from dotenv import load_dotenv
 
 import os
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-logging.basicConfig(level=logging.WARNING)
+FORMAT = "%(levelname)s [%(asctime)s %(filename)s->%(funcName)s():%(lineno)s]: %(message)s"
+logging.basicConfig(format=FORMAT, level=logging.INFO)
+
 # logger = logging.getLogger('discord')
 # logger.setLevel(logging.INFO)
 # handler = logging.FileHandler(
@@ -23,14 +28,37 @@ logging.basicConfig(level=logging.WARNING)
 # handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 # logger.addHandler(handler)
 
+print(discord.__version__)
+
+# noinspection lines to fix pycharm error saying Intents doesn't have members and Intents is read-only
 intents = discord.Intents.default()
+# noinspection PyUnresolvedReferences,PyDunderSlots
 intents.members = True
+# noinspection PyUnresolvedReferences,PyDunderSlots
 intents.typing = True
+# noinspection PyUnresolvedReferences,PyDunderSlots
 intents.message_content = True
+
+try:
+    with open(f"{dir_path}/.env", 'r') as f:
+        pass
+except FileNotFoundError:
+    txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\n"
+           "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000")
+    with open(f'{dir_path}/.env', 'w') as f:
+        f.write(txt)
+    raise discord.LoginFailure("I've created a .env file for you, go in there and put your bot token in the file.\n")
+
+# Credentials
+load_dotenv('.env')
+
+if not os.getenv("BOT_TOKEN"):
+    raise discord.LoginFailure("You need to add your bot token to the .env file in your bot folder.")
+
 
 class Modbot(Bot):
     def __init__(self):
-        super().__init__(description="Bot by Ryry013#9234", command_prefix=config.default_prefix,
+        super().__init__(description="Bot by Ryry013#9234", command_prefix=os.getenv("DEFAULT_PREFIX"),
                          intents=intents)
         print('starting loading of jsons')
         db_file_path = f"{dir_path}/modbot.json"
@@ -69,8 +97,8 @@ class Modbot(Bot):
 
     async def on_ready(self):
         print("Bot loaded")
-        self.log_channel = self.get_channel(config.log_channel_id)
-        self.error_channel = self.get_channel(config.error_channel_id)
+        self.log_channel = self.get_channel(int(os.getenv("LOG_CHANNEL_ID")))
+        self.error_channel = self.get_channel(int(os.getenv("ERROR_CHANNEL_ID")))
 
         await self.log_channel.send('Bot loaded')
         await self.change_presence(activity=discord.Game('DM me to talk to mods'))
@@ -83,7 +111,8 @@ class Modbot(Bot):
                                           "user continues messaging they should be able to come right back in.")
             user = self.get_user(thread_info["user_id"])
             if user and user.dm_channel:
-                await user.dm_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. Please try again.")
+                await user.dm_channel.send(
+                    "NOTIFICATION: Sorry, I had to restart, so I cleared this room. Please try again.")
         self.db['reports'] = {}
 
     async def on_error(self, event, *args, **kwargs):
@@ -141,7 +170,6 @@ class Modbot(Bot):
             return
 
         elif isinstance(error, commands.CommandInvokeError):
-            command = ctx.command.qualified_name
             try:
                 await ctx.send(f"I couldn't execute the command.  I probably have a bug.  "
                                f"This has been reported to Ryan.")
@@ -223,7 +251,7 @@ class Modbot(Bot):
 
 def run_bot():
     bot = Modbot()
-    bot.run(config.token)
+    bot.run(os.getenv("BOT_TOKEN"))
     print('Bot finished running')
 
 
