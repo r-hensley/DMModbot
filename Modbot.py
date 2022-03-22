@@ -1,15 +1,18 @@
 # -*- coding: utf8 -*-
+import logging
 import discord
 from discord.ext.commands import Bot
 from discord.ext import commands
-import sys, traceback
+import sys
+import traceback
 import json
 from datetime import datetime
+import config
+from cogs.utils.db_utils import str_keys_to_int_keys, convert_old_db, int_keys_to_str_keys
 
 import os
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-import logging
 logging.basicConfig(level=logging.WARNING)
 # logger = logging.getLogger('discord')
 # logger.setLevel(logging.INFO)
@@ -22,22 +25,43 @@ logging.basicConfig(level=logging.WARNING)
 
 intents = discord.Intents.default()
 intents.members = True
+intents.typing = True
+intents.messages = True
 
 class Modbot(Bot):
     def __init__(self):
-        super().__init__(description="Bot by Ryry013#9234", command_prefix='_', owner_id=202995638860906496,
+        super().__init__(description="Bot by Ryry013#9234", command_prefix=config.default_prefix, owner_id=config.owner_id,
                          intents=intents)
         print('starting loading of jsons')
-        with open(f"{dir_path}/modbot.json", "r") as read_file1:
-            read_file1.seek(0)
-            self.db = json.load(read_file1)
+        db_file_path = f"{dir_path}/modbot.json"
+        if os.path.exists(db_file_path):
+            with open(db_file_path, "r") as read_file1:
+                read_file1.seek(0)
+                self.db = str_keys_to_int_keys(convert_old_db(json.load(read_file1)))
+        else:
+            # Initial bot set up
+            self.db = {
+                "prefix": {},
+                "pause": False,
+                "settingup": [],
+                "guilds": {},
+                "reports": {},
+            }
 
         date = datetime.today().strftime("%d%m%Y%H%M")
-        with open(f"{dir_path}/database_backups/database_{date}.json", "w") as write_file:
-            json.dump(self.db, write_file)
+        backup_dir = f"{dir_path}/database_backups"
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+        with open(f"{backup_dir}/database_{date}.json", "w") as write_file:
+            json.dump(int_keys_to_str_keys(self.db), write_file)
+
+        self.log_channel = None
+        self.error_channel = None
+
+    async def setup_hook(self):
         for extension in ['cogs.modbot']:
             try:
-                self.load_extension(extension)
+                await self.load_extension(extension)
             except Exception as e:
                 print(f'Failed to load {extension}', file=sys.stderr)
                 traceback.print_exc()
@@ -45,17 +69,22 @@ class Modbot(Bot):
 
     async def on_ready(self):
         print("Bot loaded")
+        self.log_channel = self.get_channel(config.log_channel_id)
+        self.error_channel = self.get_channel(config.error_channel_id)
 
-        await self.get_channel(275879535977955330).send('Bot loaded')
+        await self.log_channel.send('Bot loaded')
         await self.change_presence(activity=discord.Game('DM me to talk to mods'))
 
         self.recently_in_report_room = {}
-        for guild in self.db['guilds'].copy():
-            if self.db['guilds'][guild]['currentuser']:
-                report_channel = self.get_channel(int(self.db['guilds'][guild]['channel']))
-                self.db['guilds'][guild]['currentuser'] = None
+        for thread_info in self.db['reports'].values():
+            report_channel = self.get_channel(thread_info['thread_id'])
+            if report_channel:
                 await report_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. If the "
                                           "user continues messaging they should be able to come right back in.")
+            user = self.get_user(thread_info["user_id"])
+            if user and user.dm_channel:
+                await user.dm_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. Please try again.")
+        self.db['reports'] = {}
 
     async def on_error(self, event, *args, **kwargs):
         e = discord.Embed(title='Event Error', colour=0xa32952)
@@ -69,7 +98,8 @@ class Modbot(Bot):
             print(type(arg))
             args_str.append(f'[{index}]: {arg!r}')
             if type(arg) == discord.Message:
-                e.add_field(name="Author", value=f'{arg.author} (ID: {arg.author.id})')
+                e.add_field(name="Author",
+                            value=f'{arg.author} (ID: {arg.author.id})')
                 fmt = f'Channel: {arg.channel} (ID: {arg.channel.id})'
                 if arg.guild:
                     fmt = f'{fmt}\nGuild: {arg.guild} (ID: {arg.guild.id})'
@@ -77,7 +107,7 @@ class Modbot(Bot):
                 jump_url = arg.jump_url
         args_str.append('```')
         e.add_field(name='Args', value='\n'.join(args_str), inline=False)
-        await self.get_channel(554572239836545074).send(jump_url, embed=e)
+        await self.error_channel.send(jump_url, embed=e)
         traceback.print_exc()
 
     async def on_command_error(self, ctx, error):
@@ -131,7 +161,7 @@ class Modbot(Bot):
         elif isinstance(error, commands.CheckFailure):
             # the predicates in Command.checks have failed.
             try:
-                if str(ctx.guild.id) in self.db['modrole']:
+                if ctx.guild.id in self.db['guilds']:
                     await ctx.send("You lack permissions to do that.")
                 else:
                     await ctx.send(f"You lack the permissions to do that.  If you are a mod, try getting the owner or "
@@ -166,7 +196,8 @@ class Modbot(Bot):
 
         print(datetime.now())
         error = getattr(error, 'original', error)
-        qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
+        qualified_name = getattr(
+            ctx.command, 'qualified_name', ctx.command.name)
         print(f'Error in {qualified_name}:', file=sys.stderr)
         traceback.print_tb(error.__traceback__)
         print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
@@ -182,13 +213,23 @@ class Modbot(Bot):
 
         e.add_field(name='Location', value=fmt, inline=False)
 
-        exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
+        exc = ''.join(traceback.format_exception(
+            type(error), error, error.__traceback__, chain=False))
         traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
         e.timestamp = datetime.utcnow()
-        await self.get_channel(554572239836545074).send(traceback_text, embed=e)
+        await self.error_channel.send(traceback_text, embed=e)
         print('')
 
 
-bot = Modbot()
-with open(f"{dir_path}/ModbotKey.txt") as f:
-    bot.run(f.read() + 'o')
+def run_bot():
+    bot = Modbot()
+    bot.run(config.token)
+    print('Bot finished running')
+
+
+def main():
+    run_bot()
+
+
+if __name__ == '__main__':
+    main()
