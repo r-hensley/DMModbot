@@ -344,8 +344,10 @@ class Modbot(commands.Cog):
             if not msg.author.dm_channel:
                 await msg.author.create_dm()
             await report_channel.trigger_typing()
+
             await msg.author.dm_channel.trigger_typing()
             await asyncio.sleep(1)
+
             try:
                 entry_text = f"The user {msg.author.mention} has entered the report room. Reply in the thread to continue."
                 thread_text = f"""@here I'll relay any of their messages to this channel. Any messages you type will be sent to them.
