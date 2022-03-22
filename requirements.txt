@@ -6,7 +6,7 @@ attrs
 chardet
 charset-normalizer
 # use `python -m pip install -U git+https://github.com/Rapptz/discord.py` to install the d.py master branch which supports threads
-discord.py @ git+https://github.com/Rapptz/discord.py@414759f3723a3fe632ecfc1343a4164a51cd2940
+discord.py @ git+https://github.com/Rapptz/discord.py
 frozenlist
 idna
 multidict
