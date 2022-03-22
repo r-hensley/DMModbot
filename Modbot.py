@@ -36,10 +36,7 @@ intents.typing = True
 # noinspection PyUnresolvedReferences,PyDunderSlots
 intents.message_content = True
 
-try:
-    with open(f"{dir_path}/.env", 'r') as f:
-        pass
-except FileNotFoundError:
+if not os.path.exists(f"{dir_path}/.env"):
     txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\n"
            "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000")
     with open(f'{dir_path}/.env', 'w') as f:
@@ -47,7 +44,7 @@ except FileNotFoundError:
     raise discord.LoginFailure("I've created a .env file for you, go in there and put your bot token in the file.\n")
 
 # Credentials
-load_dotenv('.env')
+load_dotenv(f'{dir_path}/.env')
 
 if not os.getenv("BOT_TOKEN"):
     raise discord.LoginFailure("You need to add your bot token to the .env file in your bot folder.")
