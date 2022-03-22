@@ -357,6 +357,8 @@ class Modbot(commands.Cog):
         self.bot.db['inreportroom'][str(guild.id)] = msg.author.id
 
         async def open_room():
+            if not msg.author.dm_channel:
+                await msg.author.create_dm()
             await report_channel.trigger_typing()
             dm_channel = msg.author.dm_channel
             if not dm_channel:
