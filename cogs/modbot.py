@@ -235,7 +235,6 @@ class Modbot(commands.Cog):
         shared_guilds = sorted(
             [g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
 
-        print('select')
         guild = None
         if not guild:
             if len(shared_guilds) == 0:
