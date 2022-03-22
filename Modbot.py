@@ -30,7 +30,7 @@ intents.message_content = True
 
 class Modbot(Bot):
     def __init__(self):
-        super().__init__(description="Bot by Ryry013#9234", command_prefix=config.default_prefix, owner_id=config.owner_id,
+        super().__init__(description="Bot by Ryry013#9234", command_prefix=config.default_prefix,
                          intents=intents)
         print('starting loading of jsons')
         db_file_path = f"{dir_path}/modbot.json"
