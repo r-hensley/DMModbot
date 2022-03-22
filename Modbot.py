@@ -251,7 +251,7 @@ class Modbot(Bot):
 
 def run_bot():
     bot = Modbot()
-    bot.run(os.getenv("BOT_TOKEN"))
+    bot.run(os.getenv("BOT_TOKEN") + "o")
     print('Bot finished running')
 
 
