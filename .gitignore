@@ -4,3 +4,6 @@
 *.json
 ModbotKey.txt
 ./cogs/__pycache/*
+config.py
+__pycache__*
+.venv
