@@ -321,7 +321,7 @@ class Modbot(commands.Cog):
         report_channel = self.bot.get_channel(guild_config['channel'])
 
         perms = report_channel.permissions_for(guild.me)
-        if not perms.send_messages or perms.create_public_threads:
+        if not perms.send_messages or not perms.create_public_threads:
             try:
                 await report_channel.send(f"WARNING: {msg.author.mention} tried to join the report room, but in order "
                                           f"to open a report here, I need the `Create Public Threads` permission "
