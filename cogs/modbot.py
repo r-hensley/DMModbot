@@ -320,6 +320,19 @@ class Modbot(commands.Cog):
         guild_config = self.bot.db['guilds'][guild.id]
         report_channel = self.bot.get_channel(guild_config['channel'])
 
+        perms = report_channel.permissions_for(guild.me)
+        if not perms.send_messages or perms.create_public_threads:
+            try:
+                await report_channel.send(f"WARNING: {msg.author.mention} tried to join the report room, but in order "
+                                          f"to open a report here, I need the `Create Public Threads` permission "
+                                          f"in this channel. Please give me that permission and tell the user "
+                                          f"to try again.")
+            except discord.Forbidden:
+                pass
+            await msg.author.send("The report room for this server is not properly setup. Please directly message "
+                                  "the mods.")
+            return
+
         # #### SPECIAL STUFF FOR JP SERVER ####
         # Turn away new users asking for a role
         if guild.id == 189571157446492161:
@@ -350,10 +363,14 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                entry_text = f"The user {msg.author.mention} has entered the report room. Reply in the thread to continue."
-                thread_text = f"""@here I'll relay any of their messages to this channel. Any messages you type will be sent to them.
-To end this chat, type `end` or `done`.
-To *not* send a certain message, start the message with `_`. " For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent." **Report starts here\n__{' '*70}__**\n\n\n⠀
+                entry_text = f"The user {msg.author.mention} has entered the report room. " \
+                             f"Reply in the thread to continue. (@here)"
+                thread_text = f"""I'll relay any of their messages to this channel. 
+                Any messages you type will be sent to them.
+                To end this chat, type `end` or `done`.
+                To *not* send a certain message, start the message with `_`. 
+                For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent.
+                \n**Report starts here\n__{' '*70}__**\n\n\n
                 """  # invisible character at end of this line
                 entry_message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}', auto_archive_duration=1440) # Auto archive in 24 hours
