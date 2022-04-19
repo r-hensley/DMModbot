@@ -364,6 +364,7 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
+                invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
                 entry_text = f"The user {msg.author.mention} has entered the report room. " \
                              f"Reply in the thread to continue. (@here)"
                 thread_text = f"""\
@@ -380,11 +381,13 @@ class Modbot(commands.Cog):
                 
                 **Report starts here
                 __{' '*70}__**
-                \n\n\n
-                """  # invisible character at end of this line
+                \n\n\n{invisible_character}
+                """  # invisible character at end of this line to avoid whitespace trimming
                 thread_text = dedent(thread_text)
                 entry_message = await report_channel.send(entry_text)
-                report_thread = await entry_message.create_thread(name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}', auto_archive_duration=1440) # Auto archive in 24 hours
+                report_thread = await entry_message.create_thread(
+                    name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}',
+                    auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
                 self.bot.db['reports'][msg.author.id] = {
                     "user_id": msg.author.id,
@@ -522,8 +525,13 @@ class Modbot(commands.Cog):
                 pass
         else:
             try:
-                await source.send(f"**⠀\n⠀\n⠀\n__{' '*70}__**\n**Thank you, I have closed the room.{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**")
-                await dest.send(f"**⠀\n⠀\n⠀\n__{' '*70}__**\n**Thank you, I have closed the room.{' Messages in this thread will no longer be sent to the user' if is_dest_thread else ''}**")
+                invisible_character = "⠀"  # To avoid whitespace trimming
+                await source.send(f"**{invisible_character}\n\n\n__{' '*70}__**\n**"
+                                  f"Thank you, I have closed the room."
+                                  f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**")
+                await dest.send(f"**{invisible_character}\n\n\n__{' '*70}__**\n**"
+                                f"Thank you, I have closed the room."
+                                f"{' Messages in this thread will no longer be sent to the user' if is_dest_thread else ''}**")
             except discord.Forbidden:
                 pass
 
