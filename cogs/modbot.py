@@ -381,9 +381,9 @@ class Modbot(commands.Cog):
                 
                 **Report starts here
                 __{' '*70}__**
-                \n\n\n{invisible_character}
+                \n\n
                 """  # invisible character at end of this line to avoid whitespace trimming
-                thread_text = dedent(thread_text)
+                thread_text = dedent(thread_text) + invisible_character  # invis. character breaks dedent
                 entry_message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(
                     name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}',
@@ -526,7 +526,7 @@ class Modbot(commands.Cog):
         else:
             try:
                 invisible_character = "⠀"  # To avoid whitespace trimming
-                await source.send(f"**{invisible_character}\n\n\n__{' '*70}__**\n**"
+                await source.send(f"**{invisible_character}\n\n__{' '*70}__**\n**"
                                   f"Thank you, I have closed the room."
                                   f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**")
                 await dest.send(f"**{invisible_character}\n\n\n__{' '*70}__**\n**"
