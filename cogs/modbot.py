@@ -1,6 +1,7 @@
 import logging
 from concurrent.futures import thread
 from typing import Optional, Union
+from textwrap import dedent
 
 import discord
 from discord.ext import commands
@@ -365,13 +366,23 @@ class Modbot(commands.Cog):
             try:
                 entry_text = f"The user {msg.author.mention} has entered the report room. " \
                              f"Reply in the thread to continue. (@here)"
-                thread_text = f"""I'll relay any of their messages to this channel. 
-                Any messages you type will be sent to them.
-                To end this chat, type `end` or `done`.
-                To *not* send a certain message, start the message with `_`. 
-                For example, `Hello` would be sent and `_What should we do`/bot commands would not be sent.
-                \n**Report starts here\n__{' '*70}__**\n\n\n
+                thread_text = f"""\
+                I'll relay any of their messages to this 
+                channel. 
+                   - Any messages you type will be sent
+                      to the user. 
+                   - To end this chat, type `end` or `done`.
+                   - To *not* send a certain message, start the 
+                      message with `_`. 
+                   - For example, `Hello` would be sent, but 
+                      `_What should we do` or bot
+                      commands would not be sent.
+                
+                **Report starts here
+                __{' '*70}__**
+                \n\n\n
                 """  # invisible character at end of this line
+                thread_text = dedent(thread_text)
                 entry_message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}', auto_archive_duration=1440) # Auto archive in 24 hours
                 await report_thread.send(thread_text)
