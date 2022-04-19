@@ -383,12 +383,20 @@ class Modbot(commands.Cog):
                 __{' '*70}__**
                 \n\n
                 """  # invisible character at end of this line to avoid whitespace trimming
+
                 thread_text = dedent(thread_text) + invisible_character  # invis. character breaks dedent
-                entry_message = await report_channel.send(entry_text)
+                entry_message: discord.Message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(
                     name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}',
                     auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
+
+                # Add reaction signifying open room, will remove in close_room() function
+                try:
+                    await entry_message.add_reaction("❗")
+                except discord.Forbidden:
+                    pass
+
                 self.bot.db['reports'][msg.author.id] = {
                     "user_id": msg.author.id,
                     "thread_id": report_thread.id,
@@ -396,6 +404,7 @@ class Modbot(commands.Cog):
                     "mods": [],
                     "not_anonymous": False
                 }
+
                 user_text = f">>> {msg.author.mention}: {msg.content}"
                 if len(user_text) > 2000:
                     await report_thread.send(user_text[:2000])
@@ -424,7 +433,7 @@ class Modbot(commands.Cog):
                             "When you are done talking to the mods, please type `end` or `done`, and then "
                             "the chat will close.",
                 color=0x00FF00))
-            return True
+            return entry_message
 
         try:
             await open_room()  # maybe this should always be True
@@ -540,11 +549,30 @@ class Modbot(commands.Cog):
     # source is the DM channel, dest is the report room
     async def close_room(self, open_report: OpenReport, error):
         await self.notify_close_room(open_report.source, open_report.dest, error)
-        thread = self.bot.get_channel(open_report.thread_info['thread_id'])
+
+        # get thread from open_report object
+        thread: discord.Thread = self.bot.get_channel(open_report.thread_info['thread_id'])
+
+        # delete report info from database
         if open_report.user.id in self.bot.db['reports']:
             del self.bot.db['reports'][open_report.user.id]
+
+        # archive thread
         if thread:
             await thread.edit(archived=True)
+
+        # remove ❗ reaction from thread parent message if there
+        try:
+            thread_opening_message = await thread.parent.fetch_message(thread.id)
+        except (discord.NotFound, discord.HTTPException):
+            pass
+        else:
+            try:
+                await thread_opening_message.remove_reaction("❗", thread.guild.me)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
         self.bot.recently_in_report_room[open_report.user.id] = time.time()
 
     #
