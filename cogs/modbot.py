@@ -605,7 +605,7 @@ class Modbot(commands.Cog):
         else:
             try:
                 await ctx.message.add_reaction("✅")
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.NotFound):
                 pass
 
     # ############ ADMIN COMMANDS #################
