@@ -1,5 +1,4 @@
 import logging
-from concurrent.futures import thread
 from typing import Optional, Union
 from textwrap import dedent
 
@@ -93,6 +92,7 @@ class Modbot(commands.Cog):
     @commands.Cog.listener()
     async def on_command(self, ctx):
         pass
+
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
         if type(channel) != discord.DMChannel:
@@ -105,7 +105,7 @@ class Modbot(commands.Cog):
                 await self.bot.error_channel.send(f"Thread ID {thread_info['thread_id']} does not exist")
                 del reports[user.id] # clear reports since the thread id is invalid
                 return
-            await report_thread.trigger_typing()
+            await report_thread.typing()
             return
 
     @commands.Cog.listener()
@@ -142,6 +142,9 @@ class Modbot(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, msg):
         if msg.author.bot:
+            return
+
+        if isinstance(msg.channel, discord.VoiceChannel):
             return
 
         if self.bot.db['pause']:
@@ -319,7 +322,7 @@ class Modbot(commands.Cog):
 
     async def start_report_room(self, msg: discord.Message, guild: discord.Guild):
         guild_config = self.bot.db['guilds'][guild.id]
-        report_channel = self.bot.get_channel(guild_config['channel'])
+        report_channel: discord.Thread = self.bot.get_channel(guild_config['channel'])
 
         perms = report_channel.permissions_for(guild.me)
         if not perms.send_messages or not perms.create_public_threads:
@@ -358,9 +361,9 @@ class Modbot(commands.Cog):
         async def open_room():
             if not msg.author.dm_channel:
                 await msg.author.create_dm()
-            await report_channel.trigger_typing()
+            await report_channel.typing()
 
-            await msg.author.dm_channel.trigger_typing()
+            await msg.author.dm_channel.typing()
             await asyncio.sleep(1)
 
             try:
@@ -627,9 +630,12 @@ class Modbot(commands.Cog):
         """Sets the current channel as the report room, or resets the report module"""
         guilds = self.bot.db['guilds']
         if ctx.guild.id not in guilds:
-            guilds[ctx.guild.id] = { 'mod_role': None }
+            guilds[ctx.guild.id] = {'mod_role': None}
         guild_config = guilds[ctx.guild.id]
-        guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role'] }
+        if not guild_config.get("mod_role"):
+            await ctx.send("Please configure the mod role first using `_setmodrole`.")
+            return
+        guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role']}
         await ctx.send(f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
                        f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
                        f"on helpful commands for the bot")
@@ -649,7 +655,7 @@ class Modbot(commands.Cog):
             guild_config['mod_role'] = None
             await ctx.send("Removed mod role setting for this server")
             return
-        mod_role = discord.utils.find(
+        mod_role: discord.Role = discord.utils.find(
             lambda role: role.name == role_name, ctx.guild.roles)
         if not mod_role:
             await ctx.send("The role with that name was not found")
