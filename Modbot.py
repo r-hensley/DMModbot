@@ -38,7 +38,7 @@ intents.message_content = True
 
 if not os.path.exists(f"{dir_path}/.env"):
     txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\n"
-           "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000")
+           "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000\nBAN_APPEALS_GUILD_ID=0000\n")
     with open(f'{dir_path}/.env', 'w') as f:
         f.write(txt)
     raise discord.LoginFailure("I've created a .env file for you, go in there and put your bot token in the file.\n")
@@ -245,7 +245,15 @@ class Modbot(Bot):
 
 def run_bot():
     bot = Modbot()
-    bot.run(os.getenv("BOT_TOKEN") + "o")
+    bot_token = os.getenv("BOT_TOKEN")
+
+    if len(bot_token) == 58:
+        # A bit of a deterrent from my bot token instantly being used if my .env file gets leaked somehow
+        bot.run(bot_token + "o")
+
+    else:
+        bot.run(bot_token)
+
     print('Bot finished running')
 
 

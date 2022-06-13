@@ -1,42 +1,23 @@
-import logging
+import re
+import os
+
+import asyncio
 from typing import Optional, Union
 from textwrap import dedent
+from datetime import datetime
+from dataclasses import dataclass
 
 import discord
 from discord.ext import commands
-import asyncio
-import re
-import os
-import io
-from contextlib import redirect_stdout
-import traceback
-import textwrap
-from copy import deepcopy
-import shutil
-import json
-import sys
-import time
-from datetime import datetime
-from dataclasses import dataclass
-from .utils.db_utils import int_keys_to_str_keys, get_thread_id_to_thread_info
+
+from .utils.db_utils import get_thread_id_to_thread_info
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-REPORT_TIMEOUT = 30
-
-INSTRUCTIONS = """・`end` or `done` - Finish the current report.
-・`_setup` - Reset the room completely (if there's a bug).
-・`_clear` - Clear the waiting list
-・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you want a user to come 
-　to the report room or send an official mod message to a channel.
-・`_not_anonymous` - Type this during a report session to reveal moderator names for future messages. You can 
-　enter it again to return to anonymity at any time during the session, and it'll be automatically reset to default   
-　anonymity after the session ends."""
 
 # database structure
 # {
 #     "prefix": {},
-#     "pause": bool,
 #     "settingup": [USER1_ID, USER2_ID],
 #     "reports": { # user_id to thread_info
 #         1234566789948 (user_id): {
@@ -56,21 +37,19 @@ INSTRUCTIONS = """・`end` or `done` - Finish the current report.
 # }
 
 
-def is_admin(ctx):
-    if not ctx.guild:
-        return False
-    if ctx.channel.permissions_for(ctx.author).administrator:
-        return True
-    guilds = ctx.bot.db['guilds']
-    if ctx.guild.id not in guilds:
-        return False
-    guild_config = guilds[ctx.guild.id]
-    if 'mod_role' not in guild_config or guild_config['mod_role'] is None:
-        return False
-    mod_role = ctx.guild.get_role(guild_config['mod_role'])
-    if mod_role is None:
-        return False
-    return mod_role in ctx.author.roles
+async def _send_typing_notif(self, channel, user):
+    if type(channel) != discord.DMChannel:
+        return
+    reports = self.bot.db['reports']
+    if user.id in reports:
+        thread_info = reports[user.id]
+        report_thread = self.bot.get_channel(thread_info['thread_id'])
+        if report_thread is None:
+            await self.bot.error_channel.send(f"Thread ID {thread_info['thread_id']} does not exist")
+            del reports[user.id]  # clear reports since the thread id is invalid
+            return
+        await report_thread.typing()
+        return
 
 
 @dataclass
@@ -84,115 +63,65 @@ class OpenReport:
 
 class Modbot(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
-        self._last_result = None
+        self.bot: commands.Bot = bot
         # dict w/ key ID and value of last left report room time
         self.recently_in_report_room = {}
-
-    @commands.Cog.listener()
-    async def on_command(self, ctx):
-        pass
-
-    @commands.Cog.listener()
-    async def on_typing(self, channel, user, _):
-        if type(channel) != discord.DMChannel:
-            return
-        reports = self.bot.db['reports']
-        if user.id in reports:
-            thread_info = reports[user.id]
-            report_thread = self.bot.get_channel(thread_info['thread_id'])
-            if report_thread is None:
-                await self.bot.error_channel.send(f"Thread ID {thread_info['thread_id']} does not exist")
-                del reports[user.id] # clear reports since the thread id is invalid
-                return
-            await report_thread.typing()
-            return
-
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild):
-        msg = f"""__New guild__
-        **Name:** {guild.name}
-        **Owner:** {guild.owner.mention} ({guild.owner.name}#{guild.owner.discriminator}))
-        **Members:** {guild.member_count}
-        **Channels:** {len(guild.text_channels)} text / {len(guild.voice_channels)} voice"""
-
-        await self.bot.get_user(self.bot.owner_id).send(msg)
-        await self.bot.get_user(self.bot.owner_id).send("Channels: \n" +
-                                                        '\n'.join([channel.name for channel in guild.channels]))
-
-    @commands.Cog.listener()
-    async def on_thread_update(self, before, after):
-        if not before.archived and after.archived:
-            if after.archiver_id == self.bot.user.id:
-                # I archived it, so do noething
-                return
-            # thread has been archived by someone else
-            thread_id = after.id
-            thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
-            if thread_id in thread_id_to_thread_info:
-                thread_info = thread_id_to_thread_info[thread_id]
-                user = self.bot.get_user(thread_info['user_id'])
-                if user is None:
-                    await after.send("Failed to get the user who created this report.")
-                    del self.bot.db['reports'][thread_info["user_id"]] 
-                    return
-                await self.close_room(OpenReport(thread_info, user, after, user.dm_channel, after ), False)
 
     # main code is here
     @commands.Cog.listener()
     async def on_message(self, msg):
         if msg.author.bot:
-            return
+            return  # ignore messages from bots
 
         if isinstance(msg.channel, discord.VoiceChannel):
-            return
-
-        if self.bot.db['pause']:
-            if msg.author.id == self.bot.owner_id and msg.content != "_pause":
-                logging.info("Return statement reached", "_pause return statement")
-                return
+            return  # messages in new voice channel text channels were causing bugs
 
         """PM Bot"""
+        # This function will handle new users who are not in a report room and trying to start a new report
         if isinstance(msg.channel, discord.DMChannel):  # in a PM
-            # starting a report, comes here if the user is not in server_select or in a report room already
-            if msg.author.id not in self.bot.db['settingup'] and msg.author.id not in self.bot.db['reports']:
-                if (msg.author in self.bot.recently_in_report_room.keys() and time.time() -
-                        self.bot.recently_in_report_room[msg.author] < REPORT_TIMEOUT):
-                    time_remaining = int(REPORT_TIMEOUT -
-                                         (time.time() - self.bot.recently_in_report_room[msg.author]))
-                    # re-running the same calculation is kind of a no-no but whatever
-                    await msg.author.send(
-                        f"You've recently left a report room. Please wait {time_remaining} more seconds before "
-                        f"joining again.\nIf your message was something like 'goodbye', 'thanks', or similar, "
-                        f"we appreciate it, but it is not necessary to open another room.")
-                    return
-                try:  # the user selects to which server they want to connect
-                    self.bot.db['settingup'].append(msg.author.id)
-                    guild: discord.Guild = await self.server_select(msg)
-                    self.bot.db['settingup'].remove(msg.author.id)
-                except Exception:
-                    self.bot.db['settingup'].remove(msg.author.id)
-                    await msg.author.send("WARNING: There's been an error. Setup will not continue.")
-                    raise
-
-                try:
-                    if guild:
-                        # this should enter them into the report room
-                        await self.start_report_room(msg, guild)
-                    return  # if it worked
-                except Exception:
-                    await msg.author.send("WARNING: There's been an error. Setup will not continue.")
-                    raise
+            if await self.receive_new_users(msg):
+                return  # True if a new user came into the report room
 
         # sending a message during a report
-        # this next function returns either five values or None
-        # it tries to find if a user messaged somewhere, which report room connection they're part of
+        # it tries to connect a message to a report and deliver it to the right place (either report room or DM channel)
         open_report = await self.find_current_guild(msg)
         if open_report:  # basically, if it's not None
             try:
                 await self.send_message(msg, open_report)
             except Exception:
-                await self.close_room(open_report, True)
+                await self.close_room(open_report, error=True)
+                raise
+
+    async def receive_new_users(self, msg):
+        """This function is called whenever a user messages Modbot.
+
+        It returns True if the user was not in any report rooms before and successfully admitted into one"""
+        # check first if user just recently left a report room
+        if time_remaining := self.check_if_recently_finished_report(msg):
+            await msg.author.send(
+                f"You've recently left a report room. Please wait {time_remaining} more seconds before "
+                f"joining again.\nIf your message was something like 'goodbye', 'thanks', or similar, "
+                f"we appreciate it, but it is not necessary to open another room.")
+            return True
+
+        # try to put user into report room
+        else:
+            try:  # the user selects to which server they want to connect
+                self.bot.db['settingup'].append(msg.author.id)
+                guild: discord.Guild = await self.server_select(msg)
+                self.bot.db['settingup'].remove(msg.author.id)
+            except Exception:
+                self.bot.db['settingup'].remove(msg.author.id)
+                await msg.author.send("WARNING: There's been an error. Setup will not continue.")
+                raise
+
+            # they've selected a server to make a report to, put them in that server's report room
+            try:
+                if guild:
+                    await self.start_report_room(msg, guild)  # this should enter them into the report room
+                return True  # if it worked
+            except Exception:
+                await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                 raise
 
     # for finding out which report session a certain message belongs to, None if not part of anything
@@ -443,7 +372,7 @@ class Modbot(commands.Cog):
         except Exception:
             if msg.author.id in self.bot.db['reports']:
                 del self.bot.db['reports'][msg.author.id]
-            await self.notify_close_room( report_channel, msg.author.dm_channel, True) 
+            await self.notify_close_room(report_channel, msg.author.dm_channel, True)
             raise
 
     """Send message"""
@@ -526,7 +455,8 @@ class Modbot(commands.Cog):
                                        "of the report channel. I have closed this chat.")
             await self.close_room(open_report, False)
 
-    async def notify_close_room(self, source, dest, error):
+    @staticmethod
+    async def notify_close_room(source, dest, error):
         is_source_thread = isinstance(source, discord.Thread)
         is_dest_thread = isinstance(dest, discord.Thread)
         if error:
@@ -538,12 +468,15 @@ class Modbot(commands.Cog):
         else:
             try:
                 invisible_character = "⠀"  # To avoid whitespace trimming
-                await source.send(f"**{invisible_character}\n\n__{' '*70}__**\n**"
-                                  f"Thank you, I have closed the room."
-                                  f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**")
-                await dest.send(f"**{invisible_character}\n\n\n__{' '*70}__**\n**"
-                                f"Thank you, I have closed the room."
-                                f"{' Messages in this thread will no longer be sent to the user' if is_dest_thread else ''}**")
+                s1 = f"**{invisible_character}\n\n__{' '*70}__**\n**" \
+                     f"Thank you, I have closed the room." \
+                     f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**"
+                await source.send(s1)
+
+                s2 = f"**{invisible_character}\n\n\n__{' ' * 70}__**\n**" \
+                     f"Thank you, I have closed the room." \
+                     f"{' Messages in this thread will no longer be sent to the user' if is_dest_thread else ''}**"
+                await dest.send(s2)
             except discord.Forbidden:
                 pass
 
@@ -576,7 +509,30 @@ class Modbot(commands.Cog):
                 pass
 
         # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
-        self.bot.recently_in_report_room[open_report.user.id] = time.time()
+        self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
+
+    @commands.Cog.listener()
+    async def on_typing(self, channel, user, _):
+        """When a user in a DM channel starts typing, display that in the modbot report channel"""
+        await _send_typing_notif(self, channel, user)
+
+    @commands.Cog.listener()
+    async def on_thread_update(self, before, after):
+        if not before.archived and after.archived:
+            if after.archiver_id == self.bot.user.id:
+                # I archived it, so do nothing
+                return
+            # thread has been archived by someone else
+            thread_id = after.id
+            thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
+            if thread_id in thread_id_to_thread_info:
+                thread_info = thread_id_to_thread_info[thread_id]
+                user = self.bot.get_user(thread_info['user_id'])
+                if user is None:
+                    await after.send("Failed to get the user who created this report.")
+                    del self.bot.db['reports'][thread_info["user_id"]]
+                    return
+                await self.close_room(OpenReport(thread_info, user, after, user.dm_channel, after), False)
 
     #
     # ############ OTHER GENERAL COMMANDS #################
@@ -584,264 +540,23 @@ class Modbot(commands.Cog):
 
     @commands.command()
     async def invite(self, ctx):
-        """Get an link to invite this bot to your server"""
+        """Get a link to invite this bot to your server"""
         link = f"https://discordapp.com/oauth2/authorize?client_id={self.bot.user.id}&scope=bot&permissions=18496"
         await ctx.send(f"Invite me using this link: {link}")
 
-    @commands.command()
-    @commands.check(is_admin)
-    async def send(self, ctx, user_id: int, *, msg):
-        """Sends a message to the channel ID specified"""
-        channel = self.bot.get_channel(user_id)
-        if not channel:
-            channel = self.bot.get_user(user_id)
-            if not channel:
-                await ctx.send("Invalid ID")
-                return
-        try:
-            await channel.send(f"Message from the mods of {ctx.guild.name}: {msg}")
-        except discord.Forbidden:
-            try:
-                await ctx.send(f"I can't send messages to that user.")
-            except discord.Forbidden:
-                pass
-        else:
-            try:
-                await ctx.message.add_reaction("✅")
-            except (discord.Forbidden, discord.NotFound):
-                pass
+    def check_if_recently_finished_report(self, msg):
+        report_timeout = 30  # number of seconds to make a user wait after finishing a report to open another room
 
-    # ############ ADMIN COMMANDS #################
-    @commands.command()
-    @commands.check(is_admin)
-    async def clear(self, ctx):
-        """Clears the server state """
-        if ctx.guild.id not in self.bot.db['guilds']:
-            return
-        for user_id, thread_info in self.bot.db['reports'].items():
-            if thread_info['guild_id'] == ctx.guild.id:
-                del self.bot.db['reports'][user_id]
-        await ctx.send("I've cleared the guild report state.")
-        await self.dump_json(ctx)
+        currently_in_settingup = msg.author.id not in self.bot.db['settingup']
+        currently_in_report_room = msg.author.id not in self.bot.db['reports']
+        if currently_in_settingup and currently_in_report_room:
+            timestamp_of_last_report_end = self.bot.recently_in_report_room[msg.author]
+            time_since_report = discord.utils.utcnow().timestamp() - timestamp_of_last_report_end
+            if msg.author in self.bot.recently_in_report_room and time_since_report < report_timeout:
+                time_remaining = int(report_timeout - time_since_report)
+                return time_remaining
 
-    @commands.command()
-    @commands.check(is_admin)
-    async def setup(self, ctx):
-        """Sets the current channel as the report room, or resets the report module"""
-        guilds = self.bot.db['guilds']
-        if ctx.guild.id not in guilds:
-            guilds[ctx.guild.id] = {'mod_role': None}
-        guild_config = guilds[ctx.guild.id]
-        if not guild_config.get("mod_role"):
-            await ctx.send("Please configure the mod role first using `_setmodrole`.")
-            return
-        guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role']}
-        await ctx.send(f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
-                       f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
-                       f"on helpful commands for the bot")
-        await ctx.send(INSTRUCTIONS)
-        await self.dump_json(ctx)
-
-    @commands.command()
-    @commands.check(is_admin)
-    async def setmodrole(self, ctx, *, role_name):
-        """Set the mod role for your server.  Type the exact name of the role like `;setmodrole Mods`. \
-                To remove the mod role, type `;setmodrole none`."""
-        if ctx.guild.id not in self.bot.db['guilds']:
-            await ctx.send("Report channel must be set first. Use the `setup` command in the report room.")
-            return
-        guild_config = self.bot.db['guilds'][ctx.guild.id]
-        if role_name.casefold() == "none":
-            guild_config['mod_role'] = None
-            await ctx.send("Removed mod role setting for this server")
-            return
-        mod_role: discord.Role = discord.utils.find(
-            lambda role: role.name == role_name, ctx.guild.roles)
-        if not mod_role:
-            await ctx.send("The role with that name was not found")
-            return None
-        guild_config['mod_role'] = mod_role.id
-        await ctx.send(f"Set the mod role to {mod_role.name} ({mod_role.id})")
-        await self.dump_json(ctx)
-
-    @commands.command(aliases=['not_anon', 'non_anonymous', 'non_anon', 'reveal'])
-    @commands.check(is_admin)
-    async def not_anonymous(self, ctx, *, no_args_allowed=None):
-        """This command will REVEAL moderator names to the user for the current report session."""
-        if no_args_allowed:
-            return  # to prevent someone unintentionally calling this command like "_reveal his face"
-        thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
-        if ctx.channel.id not in thread_id_to_thread_info:
-            return
-        thread_info = thread_id_to_thread_info[ctx.channel.id]
-        not_anon = thread_info.setdefault(
-            'not_anonymous', False)
-
-        if not not_anon:  # default option, moderators are still anonymous
-            thread_info['not_anonymous'] = True
-            await ctx.send("In future messages for this report session, your names will be revealed to the reporter. "
-                           f"Type `{ctx.message.content}` to make your names anonymous again. "
-                           "When this report ends, the setting will be reset and "
-                           "in the next report you will be anonymous again.")
-        else:
-            thread_info['not_anonymous'] = False
-            await ctx.send("You are now once again anonymous. If you sent any messages since the last time someone "
-                           "inputted the command, the reporter will have been shown your username.")
-
-    #
-    # ########### OWNER COMMANDS ####################
-    #
-
-    @commands.command()
-    @commands.is_owner()
-    async def sendtoall(self, ctx, *, msg):
-        config = self.bot.db['guilds']
-        for guild in config:
-            report_room = self.bot.get_channel(config[guild]['channel'])
-            if report_room:
-                try:
-                    await report_room.send(msg)
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
-        try:
-            await ctx.message.add_reaction('✅')
-        except (discord.HTTPException, discord.Forbidden):
-            pass
-
-    @commands.command(hidden=True)
-    @commands.is_owner()
-    async def reload(self, ctx, *, cog: str):
-        try:
-            await ctx.message.delete()
-        except discord.Forbidden:
-            pass
-        try:
-            await self.bot.reload_extension(f'cogs.{cog}')
-        except Exception as e:
-            await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
-        else:
-            await ctx.send('**`SUCCESS`**', delete_after=5.0)
-
-    @staticmethod
-    def cleanup_code(content):
-        """Automatically removes code blocks from the code."""
-        # remove triple quotes + py\n
-        if content.startswith("```") and content.endswith("```"):
-            return '\n'.join(content.split('\n')[1:-1])
-
-        # remove `single quotes`
-        return content.strip('` \n')
-
-    @commands.command(hidden=True, name='eval')
-    @commands.is_owner()
-    async def _eval(self, ctx, *, body: str):
-        """Evaluates a code"""
-        env = {
-            'bot': self.bot,
-            'ctx': ctx,
-            'channel': ctx.channel,
-            'author': ctx.author,
-            'guild': ctx.guild,
-            'message': ctx.message,
-            '_': self._last_result
-        }
-
-        env.update(globals())
-
-        body = self.cleanup_code(body)
-        stdout = io.StringIO()
-
-        to_compile = f'async def func():\n{textwrap.indent(body, "  ")}'
-
-        try:
-            exec(to_compile, env)
-        except Exception as e:
-            return await ctx.send(f'```py\n{e.__class__.__name__}: {e}\n```')
-
-        func = env['func']
-        try:
-            with redirect_stdout(stdout):
-                ret = await func()
-        except Exception as e:
-            value = stdout.getvalue()
-            await ctx.send(f'```py\n{value}{traceback.format_exc()}\n```')
-        else:
-            value = stdout.getvalue()
-            try:
-                await ctx.message.add_reaction('\u2705')
-            except discord.Forbidden:
-                pass
-
-            if ret is None:
-                if value:
-                    try:
-                        await ctx.send(f'```py\n{value}\n```')
-                    except discord.errors.HTTPException:
-                        st = f'```py\n{value}\n```'
-                        await ctx.send('Result over 2000 characters')
-                        await ctx.send(st[0:1996] + '\n```')
-            else:
-                self._last_result = ret
-                await ctx.send(f'```py\n{value}{ret}\n```')
-
-    @commands.command()
-    @commands.is_owner()
-    async def sdb(self, ctx):
-        await self.dump_json(ctx)
-        try:
-            await ctx.message.add_reaction('\u2705')
-        except discord.NotFound:
-            pass
-
-    @staticmethod
-    async def dump_json(ctx):
-        db_copy = deepcopy(ctx.bot.db)
-        if os.path.exists(f'{dir_path}/modbot_3.json'):
-            shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
-        if os.path.exists(f'{dir_path}/modbot_2.json'):
-            shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
-        if os.path.exists(f'{dir_path}/modbot.json'):
-            shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
-        with open(f'{dir_path}/modbot_temp.json', 'w') as write_file:
-            json.dump(int_keys_to_str_keys(db_copy), write_file, indent=4)
-        shutil.copy(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')
-
-    @commands.command()
-    @commands.is_owner()
-    async def flush(self, ctx):
-        """Flushes stderr/stdout"""
-        sys.stderr.flush()
-        sys.stdout.flush()
-        await ctx.message.add_reaction('🚽')
-
-    @commands.command(aliases=['quit'])
-    @commands.is_owner()
-    async def kill(self, ctx):
-        """Modbot is a killer"""
-        try:
-            await ctx.message.add_reaction('💀')
-            await ctx.invoke(self.flush)
-            await ctx.invoke(self.sdb)
-            await self.bot.logout()
-            await self.bot.close()
-        except Exception as e:
-            await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
-
-    @commands.command()
-    @commands.is_owner()
-    async def pause(self, ctx):
-        self.bot.db['pause'] = not self.bot.db['pause']
-        await ctx.message.add_reaction('✅')
-
-    @commands.command()
-    @commands.is_owner()
-    async def db(self, ctx):
-        """Shows me my DB"""
-        t = f"prefix: {self.bot.db['prefix']}\npause: {self.bot.db['pause']}\n" \
-            f"settingup: {self.bot.db['settingup']}\nreports: {self.bot.db['reports']}\n"
-        for guild in self.bot.db['guilds']:
-            t += f"{guild}: {self.bot.db['guilds'][guild]}\n"
-        await ctx.send(t)
+        return 0
 
 
 async def setup(bot):
