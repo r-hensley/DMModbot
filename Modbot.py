@@ -53,7 +53,7 @@ if not os.getenv("BOT_TOKEN"):
 class Modbot(Bot):
     def __init__(self):
         super().__init__(description="Bot by Ryry013#9234", command_prefix=os.getenv("DEFAULT_PREFIX"),
-                         intents=intents, owner_id=int(os.getenv("OWNER_ID")))
+                         intents=intents, owner_id=int(os.getenv("OWNER_ID") or 0) or None)
         print('starting loading of jsons')
         db_file_path = f"{dir_path}/modbot.json"
         if os.path.exists(db_file_path):
