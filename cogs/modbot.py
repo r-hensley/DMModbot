@@ -339,6 +339,7 @@ class Modbot(commands.Cog):
                     name=f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}',
                     auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
+                await report_thread.send(f";ml {author.id}")
 
                 # Add reaction signifying open room, will remove in close_room() function
                 try:
@@ -523,7 +524,7 @@ class Modbot(commands.Cog):
                 if rai in open_report.dest.guild.members:
                     user_ids = re.findall(r"\d{17,22}", msg.content)
                     for user_id in user_ids:
-                        user = open_report.dest.guild.get_member(int(user_id))
+                        user = self.bot.get_user(int(user_id))
                         if user:
                             await open_report.dest.send(f";ml {user.id}")
 
