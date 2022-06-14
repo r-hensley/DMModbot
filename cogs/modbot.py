@@ -34,6 +34,9 @@ dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 #             "mod_role": 123459535977955330,
 #         },
 #     },
+#     "user_localizations": {
+#         "123446036178059265": "en-US"
+#     },
 # }
 
 
@@ -96,7 +99,11 @@ class Modbot(commands.Cog):
         """This function is called whenever a user messages Modbot.
 
         It returns True if the user was not in any report rooms before and successfully admitted into one"""
-        # check first if user just recently left a report room
+        # check if they're currently in a report/setting up for a report (here)
+        if msg.author.id in self.bot.db['settingup'] + list(self.bot.db['reports']):
+            return False
+
+        # then check if user just recently left a report room
         if time_remaining := self.check_if_recently_finished_report(msg):
             await msg.author.send(
                 f"You've recently left a report room. Please wait {time_remaining} more seconds before "
@@ -118,7 +125,7 @@ class Modbot(commands.Cog):
             # they've selected a server to make a report to, put them in that server's report room
             try:
                 if guild:
-                    await self.start_report_room(msg, guild)  # this should enter them into the report room
+                    await self.start_report_room(msg.author, guild, msg, ban_appeal=False)  # bring user to report room
                 return True  # if it worked
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -249,29 +256,34 @@ class Modbot(commands.Cog):
 
         return guild
 
-    async def start_report_room(self, msg: discord.Message, guild: discord.Guild):
+    async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message], 
+                                ban_appeal=False):
+        """Performs initial code for bringing a user's first message into the report room and setting up the
+        connection between the user and the mods.
+
+        If this report is a ban appeal from the ban appeals server, then msg will be None and ban_appeal will be True"""
         guild_config = self.bot.db['guilds'][guild.id]
         report_channel: discord.Thread = self.bot.get_channel(guild_config['channel'])
 
         perms = report_channel.permissions_for(guild.me)
         if not perms.send_messages or not perms.create_public_threads:
             try:
-                await report_channel.send(f"WARNING: {msg.author.mention} tried to join the report room, but in order "
+                await report_channel.send(f"WARNING: {author.mention} tried to join the report room, but in order "
                                           f"to open a report here, I need the `Create Public Threads` permission "
                                           f"in this channel. Please give me that permission and tell the user "
                                           f"to try again.")
             except discord.Forbidden:
                 pass
-            await msg.author.send("The report room for this server is not properly setup. Please directly message "
-                                  "the mods.")
+            await author.send("The report room for this server is not properly setup. Please directly message "
+                              "the mods.")
             return
 
         # #### SPECIAL STUFF FOR JP SERVER ####
         # Turn away new users asking for a role
-        if guild.id == 189571157446492161:
+        if guild.id == 189571157446492161 and not ban_appeal:
             report_room = guild.get_channel(697862475579785216)
             jho = guild.get_channel(189571157446492161)
-            member = guild.get_member(msg.author.id)
+            member = guild.get_member(author.id)
             if guild.get_role(249695630606336000) in member.roles:  # new user role
                 for word in ['voice', 'role', 'locked', 'tag', 'lang', 'ボイス', 'チャンネル']:
                     if word in msg.content:
@@ -279,7 +291,7 @@ class Modbot(commands.Cog):
                                           f"Please state your native language in {jho.mention}.\n"
                                           f"ボイスチャットを使うにはいずれかの言語ロールが必要です。 "
                                           f"{jho.mention} にて母語を教えて下さい。")
-                        text = f"{str(msg.author.mention)} came to me with the following message:" \
+                        text = f"{str(author.mention)} came to me with the following message:" \
                                f"```{msg.content}```" \
                                f"I assumed they were asking for language tag, so I told them to state their " \
                                f"native language in JHO and blocked their request to open the report room."
@@ -288,17 +300,22 @@ class Modbot(commands.Cog):
 
         # ##### START THE ROOM #######
         async def open_room():
-            if not msg.author.dm_channel:
-                await msg.author.create_dm()
+            if not author.dm_channel:
+                await author.create_dm()
             await report_channel.typing()
 
-            await msg.author.dm_channel.typing()
+            await author.dm_channel.typing()
             await asyncio.sleep(1)
 
             try:
                 invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
-                entry_text = f"The user {msg.author.mention} has entered the report room. " \
+                entry_text = f"The user {author.mention} has entered the report room. " \
                              f"Reply in the thread to continue. (@here)"
+                if ban_appeal:
+                    entry_text = f"**__BAN APPEAL__**\n" + entry_text
+                    entry_text = entry_text.replace(author.mention,
+                                                    f"{author.mention} ({str(author)}, {author.id})")
+
                 thread_text = f"""\
                 I'll relay any of their messages to this 
                 channel. 
@@ -319,7 +336,7 @@ class Modbot(commands.Cog):
                 thread_text = dedent(thread_text) + invisible_character  # invis. character breaks dedent
                 entry_message: discord.Message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(
-                    name=f'{msg.author.name} report {datetime.now().strftime("%Y-%m-%d")}',
+                    name=f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}',
                     auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
 
@@ -329,50 +346,91 @@ class Modbot(commands.Cog):
                 except discord.Forbidden:
                     pass
 
-                self.bot.db['reports'][msg.author.id] = {
-                    "user_id": msg.author.id,
+                self.bot.db['reports'][author.id] = {
+                    "user_id": author.id,
                     "thread_id": report_thread.id,
                     "guild_id": report_thread.guild.id,
                     "mods": [],
                     "not_anonymous": False
                 }
 
-                user_text = f">>> {msg.author.mention}: {msg.content}"
-                if len(user_text) > 2000:
-                    await report_thread.send(user_text[:2000])
-                    await report_thread.send(user_text[2000:])
-                else:
-                    await report_thread.send(user_text)
-                await msg.add_reaction('📨')
-                await msg.add_reaction('✅')
-                if msg.attachments:
-                    for attachment in msg.attachments:
-                        await report_thread.send(f">>> {attachment.url}")
-                if msg.embeds:
-                    await report_thread.send(embed=msg.embeds[0])
+                if not ban_appeal:
+                    user_text = f">>> {author.mention}: {msg.content}"
+                    if len(user_text) > 2000:
+                        await report_thread.send(user_text[:2000])
+                        await report_thread.send(user_text[2000:])
+                    else:
+                        await report_thread.send(user_text)
+                    await msg.add_reaction('📨')
+                    await msg.add_reaction('✅')
+                    if msg.attachments:
+                        for attachment in msg.attachments:
+                            await report_thread.send(f">>> {attachment.url}")
+                    if msg.embeds:
+                        await report_thread.send(embed=msg.embeds[0])
 
             except discord.Forbidden:
-                await msg.channel.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
+                await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
                                        "anymore. Please tell them to check the permissions on the channel or to run the"
                                        " setup command again.")
                 return True
 
-            await msg.channel.send(embed=discord.Embed(
-                description="You are now connected to the moderators of the server, and I've sent your above "
-                            "message. The moderators will see any messages or images you send,"
-                            " and you'll receive messages from the mods too. It may take a while for the moderators "
-                            "to see your report, so please be patient. \n\n"
-                            "When you are done talking to the mods, please type `end` or `done`, and then "
-                            "the chat will close.",
-                color=0x00FF00))
+            if not ban_appeal:
+                locale: str = self.bot.db['user_localizations'].get(author.id)
+                if locale == 'ja':
+                    desc = "サーバーの管理者に接続しました。また先ほどあなたが送信したメッセージも管理者に送られています。" \
+                           "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
+                           "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
+                           "通報内容の入力が終了したら、`end`または`done`とタイプしてください。"
+                elif locale.startswith("es"):
+                    desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu mensaje " \
+                           "anterior. Los moderadores verán los mensajes o imágenes que " \
+                           "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
+                           "Los moderadores pueden tardar un poco en ver tu reporte, " \
+                           "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
+                           "con los moderadores, escribe `end` o `done` y el chat se cerrará."
+                else:
+                    desc = "You are now connected to the moderators of the server, and I've sent your above message. " \
+                           "The moderators will see any messages " \
+                             "or images you send, and you'll receive messages and images from the mods too." \
+                             "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
+                             "When you are done talking to the mods, please type `end` or `done`, and then " \
+                             "the chat will close."
+
+                await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
+            else:
+                locale: str = self.bot.db['user_localizations'].get(author.id)
+                if locale == 'ja':
+                    appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
+                             "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
+                             "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
+                             "申請内容の入力が終了したら、`end`または`done`とタイプしてください。"
+                elif locale.startswith("es"):
+                    appeal = "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás " \
+                             "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que " \
+                             "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
+                             "Los moderadores pueden tardar " \
+                             "un poco en ver tu apelación, así que ten paciencia. " \
+                             "\n\nCuando hayas terminado de hablar " \
+                             "con los moderadores, escribe `end` o `done` y el chat se cerrará."
+                else:
+                    appeal = "You are now connected to the moderators of the server, and I've notified them that " \
+                             "you're trying to appeal a ban. The moderators will see any messages " \
+                             "or images you send, and you'll receive messages and images from the mods too." \
+                             "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
+                             "When you are done talking to the mods, please type `end` or `done`, and then " \
+                             "the chat will close."
+
+                await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
+                return entry_message
             return entry_message
 
         try:
             await open_room()  # maybe this should always be True
         except Exception:
-            if msg.author.id in self.bot.db['reports']:
-                del self.bot.db['reports'][msg.author.id]
-            await self.notify_close_room(report_channel, msg.author.dm_channel, True)
+            if author.id in self.bot.db['reports']:
+                del self.bot.db['reports'][author.id]
+            await self.notify_close_room(report_channel, author.dm_channel, True)
             raise
 
     """Send message"""
@@ -380,7 +438,7 @@ class Modbot(commands.Cog):
                            msg: discord.Message,
                            open_report: OpenReport):
         if msg.content:
-            for prefix in ['_', ';', '.', ',', '>>', '&']:
+            for prefix in ['_', ';', '.', ',', '>>', '&', 't!', 't@', '$']:
                 # messages starting with _ or other bot prefixes
                 if msg.content.startswith(prefix):
                     try:
@@ -398,6 +456,9 @@ class Modbot(commands.Cog):
         thread_info = open_report.thread_info
 
         # message is from report channel >> DMChannel
+        # this creates a list of moderator IDs
+        # whenever a moderator sends a message, it'll check their position in the list and give them a name like
+        # "Moderator 1" if they're the first ID in the list
         if isinstance(open_report.dest, discord.DMChannel):
             if msg.author.id not in thread_info['mods']:
                 # to be used later to specify Moderator 1, Moderator 2, etc

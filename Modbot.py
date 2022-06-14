@@ -37,7 +37,7 @@ intents.typing = True
 intents.message_content = True
 
 if not os.path.exists(f"{dir_path}/.env"):
-    txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\n"
+    txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\nOWNER_ID=0000\n"
            "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000\nBAN_APPEALS_GUILD_ID=0000\n")
     with open(f'{dir_path}/.env', 'w') as f:
         f.write(txt)
@@ -53,7 +53,7 @@ if not os.getenv("BOT_TOKEN"):
 class Modbot(Bot):
     def __init__(self):
         super().__init__(description="Bot by Ryry013#9234", command_prefix=os.getenv("DEFAULT_PREFIX"),
-                         intents=intents)
+                         intents=intents, owner_id=int(os.getenv("OWNER_ID")))
         print('starting loading of jsons')
         db_file_path = f"{dir_path}/modbot.json"
         if os.path.exists(db_file_path):
@@ -64,10 +64,10 @@ class Modbot(Bot):
             # Initial bot set up
             self.db = {
                 "prefix": {},
-                "pause": False,
                 "settingup": [],
                 "guilds": {},
                 "reports": {},
+                "user_localizations": {},
             }
 
         date = datetime.today().strftime("%d%m%Y%H%M")
@@ -81,7 +81,7 @@ class Modbot(Bot):
         self.error_channel = None
 
     async def setup_hook(self):
-        for extension in ['cogs.modbot']:
+        for extension in ['cogs.modbot', 'cogs.admin', 'cogs.owner', 'cogs.unbans']:
             try:
                 await self.load_extension(extension)
             except Exception as e:

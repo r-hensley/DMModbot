@@ -3,7 +3,7 @@ import os
 import discord
 from discord.ext import commands
 
-from owner import dump_json
+from .owner import dump_json
 from .utils.db_utils import get_thread_id_to_thread_info
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))

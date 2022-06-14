@@ -1,24 +1,35 @@
 import re
 
+
 def convert_old_db(old_db):
     if "inreportroom" in old_db:
         # Old DB
         new_db = {
             "prefix": old_db["prefix"],
             "settingup": old_db["insetup"],
-            "pause": old_db["pause"],
             "guilds": {},
             "reports": {},
+            "user_localizations": {}
         }
+
+        for key in ["prefix", "settingup", "guilds", "reports", "user_localizations"]:
+            if key not in old_db:
+                old_db[key] = {}
+
         for guild_id_str, guild_config in old_db["guilds"].items():
             guild_id = int(guild_id_str)
             new_db['guilds'][guild_id] = {"channel": int(guild_config['channel'])}
             if guild_id_str in old_db['modrole']:
                 new_db['guilds'][guild_id]['mod_role'] = int(old_db['modrole'][guild_id_str])
+
+        for user_id_str, localization in old_db['user_localizations'].items():
+            new_db['user_localizations'][int(user_id_str)] = localization
+
         return new_db
     else:
         # already new db
         return old_db
+
 
 def int_keys_to_str_keys(obj):
     if isinstance(obj, dict):
@@ -31,7 +42,10 @@ def int_keys_to_str_keys(obj):
         return new_obj
     return obj
 
-discord_id = re.compile(r'^[0-9]{17,22}$')
+
+discord_id = re.compile(r'^\d{17,22}$')
+
+
 def str_keys_to_int_keys(obj):
     if isinstance(obj, dict):
         new_obj = {}
@@ -42,6 +56,7 @@ def str_keys_to_int_keys(obj):
                 new_obj[k] = str_keys_to_int_keys(v)
         return new_obj
     return obj
+
 
 def get_thread_id_to_thread_info(db):
     return dict((thread_info['thread_id'], thread_info) for thread_info in db['reports'].values())
