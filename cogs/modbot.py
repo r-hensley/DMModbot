@@ -525,6 +525,11 @@ class Modbot(commands.Cog):
                     user_ids = re.findall(r"\d{17,22}", msg.content)
                     for user_id in user_ids:
                         user = self.bot.get_user(int(user_id))
+                        if not user:
+                            try:
+                                user = await self.bot.fetch_user(int(user_id))
+                            except discord.NotFound:
+                                pass
                         if user:
                             await open_report.dest.send(f";ml {user.id}")
 
