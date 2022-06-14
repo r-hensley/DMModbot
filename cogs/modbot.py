@@ -516,6 +516,17 @@ class Modbot(commands.Cog):
                                        "of the report channel. I have closed this chat.")
             await self.close_room(open_report, False)
 
+        else:
+            # DM Channel >> Report Room
+            if isinstance(open_report.dest, (discord.TextChannel, discord.Thread)):
+                rai = self.bot.get_user(270366726737231884)
+                if rai in open_report.dest.guild.members:
+                    user_ids = re.findall(r"\d{17,22}", msg.content)
+                    for user_id in user_ids:
+                        user = open_report.dest.guild.get_member(int(user_id))
+                        if user:
+                            await open_report.dest.send(f";ml {user.id}")
+
     @staticmethod
     async def notify_close_room(source, dest, error):
         is_source_thread = isinstance(source, discord.Thread)

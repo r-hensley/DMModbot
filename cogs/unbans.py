@@ -111,7 +111,7 @@ class Unbans(commands.Cog):
                 "Please check again with the mods of that server. \n\nNote if you're sure you can't join that sever, " \
                 "you may be IP banned. If you've ever used any other Discord accounts before, please try to join " \
                 "this server with one of those accounts and try starting the process again."
-            await button_interaction.response.send_message(m)
+            await button_interaction.response.send_message(m, ephemeral=True)
 
     async def start_appeal_button_callback(self, button_interaction: discord.Interaction):
         """When this button is pressed, it will confirm in the language of the user client if they really wish
