@@ -376,7 +376,7 @@ class Modbot(commands.Cog):
                 return True
 
             if not ban_appeal:
-                locale: str = self.bot.db['user_localizations'].get(author.id)
+                locale: str = self.bot.db['user_localizations'].get(author.id, "")
                 if locale == 'ja':
                     desc = "サーバーの管理者に接続しました。また先ほどあなたが送信したメッセージも管理者に送られています。" \
                            "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
@@ -399,7 +399,7 @@ class Modbot(commands.Cog):
 
                 await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
             else:
-                locale: str = self.bot.db['user_localizations'].get(author.id)
+                locale: str = self.bot.db['user_localizations'].get(author.id, "")
                 if locale == 'ja':
                     appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
                              "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
@@ -608,10 +608,10 @@ class Modbot(commands.Cog):
     def check_if_recently_finished_report(self, msg):
         report_timeout = 30  # number of seconds to make a user wait after finishing a report to open another room
 
-        currently_in_settingup = msg.author.id not in self.bot.db['settingup']
-        currently_in_report_room = msg.author.id not in self.bot.db['reports']
-        if currently_in_settingup and currently_in_report_room:
-            timestamp_of_last_report_end = self.bot.recently_in_report_room[msg.author]
+        currently_in_settingup = msg.author.id in self.bot.db['settingup']
+        currently_in_report_room = msg.author.id in self.bot.db['reports']
+        if not currently_in_settingup and not currently_in_report_room:
+            timestamp_of_last_report_end = self.bot.recently_in_report_room.get(msg.author.id, 0)
             time_since_report = discord.utils.utcnow().timestamp() - timestamp_of_last_report_end
             if msg.author in self.bot.recently_in_report_room and time_since_report < report_timeout:
                 time_remaining = int(report_timeout - time_since_report)
