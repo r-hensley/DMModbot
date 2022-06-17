@@ -183,11 +183,16 @@ class Modbot(Bot):
         elif isinstance(error, commands.CheckFailure):
             # the predicates in Command.checks have failed.
             try:
-                if ctx.guild.id in self.db['guilds']:
-                    await ctx.send("You lack permissions to do that.")
+                if ctx.guild:
+                    if ctx.guild.id in self.db['guilds']:
+                        await ctx.send("You lack permissions to do that.")
+                    else:
+                        await ctx.send(f"You lack the permissions to do that.  If you are a mod, try getting "
+                                       f"the owner or someone with the administrator permission to type "
+                                       f"`'setmodrole <role name>`")
                 else:
-                    await ctx.send(f"You lack the permissions to do that.  If you are a mod, try getting the owner or "
-                                   f"someone with the administrator permission to type `'setmodrole <role name>`")
+                    await ctx.send("You lack permissions to do that.")
+
             except discord.Forbidden:
                 await ctx.author.send(f"I tried doing something but I lack permissions to send messages.")
             return

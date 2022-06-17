@@ -25,7 +25,6 @@ class Unbans(commands.Cog):
             if msg.channel.category.name == 'servers' or msg.channel.name == 'start_here':
                 await self.reattach_report_button(msg)  # if a mod edits one of the report info channels
 
-
     async def reattach_report_button(self, msg: discord.Message):
         """Called if a mod sends a message in the report info channel.
 

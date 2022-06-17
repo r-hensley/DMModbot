@@ -311,6 +311,12 @@ class Modbot(commands.Cog):
                 invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
                 entry_text = f"The user {author.mention} has entered the report room. " \
                              f"Reply in the thread to continue. (@here)"
+
+                member = report_channel.guild.get_member(author.id)
+                if member:
+                    if report_channel.permissions_for(member).read_messages:  # someone from staff is testing modbot
+                        entry_text = entry_text.replace("@here", "@ here ~ exempted for staff testing")
+
                 if ban_appeal:
                     entry_text = f"**__BAN APPEAL__**\n" + entry_text
                     entry_text = entry_text.replace(author.mention,
@@ -339,7 +345,6 @@ class Modbot(commands.Cog):
                     name=f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}',
                     auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
-                await report_thread.send(f";ml {author.id}")
 
                 # Add reaction signifying open room, will remove in close_room() function
                 try:
@@ -516,22 +521,6 @@ class Modbot(commands.Cog):
                 await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
                                        "of the report channel. I have closed this chat.")
             await self.close_room(open_report, False)
-
-        else:
-            # DM Channel >> Report Room
-            if isinstance(open_report.dest, (discord.TextChannel, discord.Thread)):
-                rai = self.bot.get_user(270366726737231884)
-                if rai in open_report.dest.guild.members:
-                    user_ids = re.findall(r"\d{17,22}", msg.content)
-                    for user_id in user_ids:
-                        user = self.bot.get_user(int(user_id))
-                        if not user:
-                            try:
-                                user = await self.bot.fetch_user(int(user_id))
-                            except discord.NotFound:
-                                pass
-                        if user:
-                            await open_report.dest.send(f";ml {user.id}")
 
     @staticmethod
     async def notify_close_room(source, dest, error):
