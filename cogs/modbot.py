@@ -298,6 +298,32 @@ class Modbot(commands.Cog):
                         await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
                         return
 
+        # #### SPECIAL STUFF FOR SP SERVER ####
+        # Turn away new users asking for a role
+        if guild.id == 243838819743432704 and not ban_appeal:
+            report_room = guild.get_channel(713314015014551573)
+            getting_started = guild.get_channel(995684697726267492)
+            learning_roles = guild.get_channel(1000558208227745813)
+            member = guild.get_member(author.id)
+            found_role = False  # will be True if the user has one of the roles in native_language_roles
+            for role_id in [996468349364092969, 243853718758359040, 996468349364092969, 247020385730691073]:
+                role = guild.get_role(role_id)
+                if role in member.roles:
+                    found_role = True
+                    break
+
+            if not found_role:  # new user role
+                await member.send(f"To access the server, please read {getting_started.mention} and then choose a "
+                                  f"native language role at the top of {learning_roles.mention}.\n"
+                                  f"Para acceder al servidor, por favor, lee {getting_started.mention} y luego "
+                                  f"elige un rol de idioma nativo en la parte superior de {learning_roles.mention}.")
+                text = f"{str(author.mention)} came to me with the following message:" \
+                       f"```{msg.content}```" \
+                       f"I assumed they were asking how to access the server, so I told them to get a native " \
+                       f"language in the newcomers channels and blocked their request to open the report room."
+                await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
+                return
+
         # ##### START THE ROOM #######
         async def open_room():
             if not author.dm_channel:
