@@ -321,7 +321,7 @@ class Modbot(commands.Cog):
                        f"```{msg.content}```" \
                        f"I assumed they were asking how to access the server, so I told them to get a native " \
                        f"language in the newcomers channels and blocked their request to open the report room."
-                await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
+                await report_room.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
                 return
 
         # ##### START THE ROOM #######
