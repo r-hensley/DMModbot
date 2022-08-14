@@ -2,6 +2,7 @@ import re
 import os
 
 import asyncio
+from inspect import cleandoc
 from typing import Optional, Union
 from textwrap import dedent
 from datetime import datetime
@@ -65,14 +66,14 @@ class OpenReport:
 
 
 class Modbot(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
         # dict w/ key ID and value of last left report room time
         self.recently_in_report_room = {}
 
     # main code is here
     @commands.Cog.listener()
-    async def on_message(self, msg):
+    async def on_message(self, msg: discord.Message):
         if msg.author.bot:
             return  # ignore messages from bots
 
@@ -95,7 +96,7 @@ class Modbot(commands.Cog):
                 await self.close_room(open_report, error=True)
                 raise
 
-    async def receive_new_users(self, msg):
+    async def receive_new_users(self, msg: discord.Message):
         """This function is called whenever a user messages Modbot.
 
         It returns True if the user was not in any report rooms before and successfully admitted into one"""
@@ -140,7 +141,7 @@ class Modbot(commands.Cog):
             thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
             if msg.channel.id not in thread_id_to_thread_info:
                 return None  # Message not sent in one of the active threads
-            
+
             thread_info = thread_id_to_thread_info[msg.channel.id]
 
             # now for sure you're messaging in the report room of a guild with an active report happening
@@ -157,7 +158,7 @@ class Modbot(commands.Cog):
         elif isinstance(msg.channel, discord.DMChannel):  # DM --> guild
             if msg.author.id not in self.bot.db['reports']:
                 return None
-            
+
             thread_info = self.bot.db['reports'][msg.author.id]
 
             source: discord.DMChannel = msg.author.dm_channel
@@ -172,9 +173,18 @@ class Modbot(commands.Cog):
 
     #
     # for first entering a user into the report room
-    async def server_select(self, msg):
+    async def server_select(self, msg: discord.Message) -> Optional[discord.Guild]:
+        """From the entry message into the DMs by a user, ask them which server they want to connect to, and return
+        a guild object."""
         shared_guilds = sorted(
             [g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
+
+        appeals_server = self.bot.get_guild(int(os.getenv("BAN_APPEALS_GUILD_ID")))
+        if appeals_server:
+            try:
+                shared_guilds.remove(appeals_server)
+            except ValueError:
+                pass
 
         guild = None
         if not guild:
@@ -184,48 +194,26 @@ class Modbot(commands.Cog):
                 return
             elif len(shared_guilds) == 1:
                 if shared_guilds[0].id in self.bot.db['guilds']:
-                    try:
-                        q_msg = await msg.channel.send(f"Do you need to enter the report room of the server "
-                                                       f"`{shared_guilds[0].name}` and make a report to the mods of"
-                                                       f" that server?")
-                    except AttributeError:
-                        return
-                    await q_msg.add_reaction("✅")
-                    await q_msg.add_reaction("❌")
-                    try:
-                        def check(reaction_check, user_check):
-                            if user_check == msg.author:
-                                if reaction_check.message.channel == msg.channel:
-                                    if str(reaction_check) in "✅❌":
-                                        return True
+                    guild = await self.confirm_guild(msg, shared_guilds[0])
+                    return guild
 
-                        reaction, user = await self.bot.wait_for('reaction_add', check=check, timeout=60.0)
-                    except asyncio.TimeoutError:
-                        await msg.channel.send("You've waited too long. Module closing.")
-                        return
-                    if str(reaction) == "❌":
-                        await msg.channel.send("Module closing.")
-                        return
-                    guild = shared_guilds[0]
-                    await reaction.message.remove_reaction("✅", self.bot.user)
-                    await reaction.message.remove_reaction("❌", self.bot.user)
                 else:
                     await msg.channel.send("We only share one guild, but that guild has not setup their report room"
                                            " yet. Please tell the mods to type `_setup` in some channel.")
                     return
             else:
-                msg_text = "Hello, thank you for messaging. We share multiple servers, so please select which " \
-                           "server you're trying to make a report to by replying with the `number` before your " \
-                           "server (for example, you could reply with the single number `3`.)"
+                msg_text = "Hello, thank you for messaging me. Please select which " \
+                           "server want to connect to. To do this, reply with the `number` before your " \
+                           "server (for example, you can reply with the single number `3`.)"
                 index = 1
-                msg_embed = '`1)` '
+                msg_embed = ''
                 for i_guild in shared_guilds:
+                    msg_embed += f"`{index})` "
                     index += 1
                     msg_embed += f"{i_guild.name}"
-                    if index < len(shared_guilds) + 1:
-                        msg_embed += f"\n`{index})` "
+                    msg_embed += "\n"
                 try:
-                    await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
+                    conf = await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
                 except AttributeError:
                     return
                 try:
@@ -233,8 +221,16 @@ class Modbot(commands.Cog):
                                                    check=lambda m: m.author == msg.author and m.channel == msg.channel,
                                                    timeout=60.0)
                 except asyncio.TimeoutError:
+                    try:
+                        await conf.delete()
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
                     await msg.channel.send("You've waited too long. Module closing.")
                     return
+                try:
+                    await conf.delete()
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
                 if resp.content.casefold() == 'cancel':
                     return
                 guild_selection = re.findall(r"^\d{1,2}$", resp.content)
@@ -254,9 +250,71 @@ class Modbot(commands.Cog):
         if guild.id not in self.bot.db['guilds']:
             return
 
+        guild = await self.confirm_guild(msg, guild)
         return guild
 
-    async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message], 
+    async def confirm_guild(self, msg: discord.Message, guild: discord.Guild) -> Optional[discord.Guild]:
+        txt = (f"Hello, you are trying to start a support ticket/report with "
+               f"the mods of {guild.name}. Is that correct?\n\n"
+               "**Please push one of the below buttons.**")
+        view = discord.ui.View(timeout=180)
+        button1 = discord.ui.Button(label="Yes, connect me to the mods",
+                                    style=discord.ButtonStyle.primary, row=1)
+        button2 = discord.ui.Button(label="No, don't send my message",
+                                    style=discord.ButtonStyle.red, row=2)
+
+        q_msg = await msg.channel.send(txt)
+
+        # delete original message if user pushes a button
+        async def button_callback1(button_interaction: discord.Interaction):
+            locale = button_interaction.locale
+            self.bot.db['user_localizations'][msg.author.id] = str(locale)
+            await q_msg.delete()
+            if str(locale).startswith('es'):
+                conf_txt = "He enviado su primer mensaje."
+            elif str(locale) == 'ja':
+                conf_txt = "あなたの最初のメッセージを送りました。"
+            else:
+                conf_txt = "I've sent your first message."
+            await button_interaction.response.send_message(conf_txt, ephemeral=True)
+
+        async def button_callback2(button_interaction: discord.Interaction):
+            self.bot.db['user_localizations'][str(msg.author.id)] = button_interaction.locale
+            await q_msg.delete()
+            await button_interaction.response.send_message("Canceling report",
+                                                           ephemeral=True)
+
+        button1.callback = button_callback1
+        button2.callback = button_callback2
+        view.add_item(button1)
+        view.add_item(button2)
+
+        async def on_timeout():
+            await q_msg.edit(content="I did not receive a response from you. Please try to send your "
+                                     "message again", view=None)
+
+        view.on_timeout = on_timeout
+
+        await q_msg.edit(view=view)  # add view to message
+
+        spam_chn = self.bot.get_channel(275879535977955330)
+        await spam_chn.send(f"button1: {button1.custom_id}, button2: {button2.custom_id}")
+
+        def check(i):
+            return i.type == discord.InteractionType.component and \
+                   i.data.get("custom_id", "") in [button1.custom_id, button2.custom_id]
+
+        try:
+            interaction = await self.bot.wait_for("interaction", timeout=180.0, check=check)
+        except asyncio.TimeoutError:
+            return  # no button pressed
+        else:
+            if interaction.data.get("custom_id", "") == button1.custom_id:
+                return guild
+            else:
+                return
+
+    async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message],
                                 ban_appeal=False):
         """Performs initial code for bringing a user's first message into the report room and setting up the
         connection between the user and the mods.
@@ -361,7 +419,7 @@ class Modbot(commands.Cog):
                       commands would not be sent.
                 
                 **Report starts here
-                __{' '*70}__**
+                __{' ' * 70}__**
                 \n\n
                 """  # invisible character at end of this line to avoid whitespace trimming
 
@@ -403,31 +461,31 @@ class Modbot(commands.Cog):
 
             except discord.Forbidden:
                 await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
-                                       "anymore. Please tell them to check the permissions on the channel or to run the"
-                                       " setup command again.")
+                                  "anymore. Please tell them to check the permissions on the channel or to run the"
+                                  " setup command again.")
                 return True
 
             if not ban_appeal:
                 locale: str = self.bot.db['user_localizations'].get(author.id, "")
                 if locale == 'ja':
-                    desc = "サーバーの管理者に接続しました。また先ほどあなたが送信したメッセージも管理者に送られています。" \
+                    desc = "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。" \
                            "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
                            "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
                            "通報内容の入力が終了したら、`end`または`done`とタイプしてください。"
                 elif locale.startswith("es"):
-                    desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu mensaje " \
-                           "anterior. Los moderadores verán los mensajes o imágenes que " \
+                    desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer " \
+                           "mensaje. Los moderadores verán los mensajes o imágenes que " \
                            "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
                            "Los moderadores pueden tardar un poco en ver tu reporte, " \
                            "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
                            "con los moderadores, escribe `end` o `done` y el chat se cerrará."
                 else:
-                    desc = "You are now connected to the moderators of the server, and I've sent your above message. " \
+                    desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
                            "The moderators will see any messages " \
-                             "or images you send, and you'll receive messages and images from the mods too." \
-                             "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                             "When you are done talking to the mods, please type `end` or `done`, and then " \
-                             "the chat will close."
+                           "or images you send, and you'll receive messages and images from the mods too." \
+                           "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
+                           "When you are done talking to the mods, please type `end` or `done`, and then " \
+                           "the chat will close."
 
                 await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
             else:
@@ -466,6 +524,7 @@ class Modbot(commands.Cog):
             raise
 
     """Send message"""
+
     async def send_message(self,
                            msg: discord.Message,
                            open_report: OpenReport):
@@ -561,7 +620,7 @@ class Modbot(commands.Cog):
         else:
             try:
                 invisible_character = "⠀"  # To avoid whitespace trimming
-                s1 = f"**{invisible_character}\n\n__{' '*70}__**\n**" \
+                s1 = f"**{invisible_character}\n\n__{' ' * 70}__**\n**" \
                      f"Thank you, I have closed the room." \
                      f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**"
                 await source.send(s1)
@@ -643,7 +702,7 @@ class Modbot(commands.Cog):
         currently_in_settingup = msg.author.id in self.bot.db['settingup']
         currently_in_report_room = msg.author.id in self.bot.db['reports']
         if not currently_in_settingup and not currently_in_report_room:
-            timestamp_of_last_report_end = self.bot.recently_in_report_room.get(msg.author.id, 0)
+            timestamp_of_last_report_end = getattr(self.bot, "recently_in_report_room", {}).get(msg.author.id, 0)
             time_since_report = discord.utils.utcnow().timestamp() - timestamp_of_last_report_end
             if msg.author in self.bot.recently_in_report_room and time_since_report < report_timeout:
                 time_remaining = int(report_timeout - time_since_report)
