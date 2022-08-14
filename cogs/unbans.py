@@ -4,9 +4,15 @@ import discord
 from discord.ext import commands
 
 from .modbot import Modbot
+from .utils import helper_functions as hf
 
 RYRY_ID = 202995638860906496
 TEST_SERVER_ID = 275146036178059265
+
+
+async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    await hf.send_error_embed(interaction.client, interaction, error)
+
 
 class Unbans(commands.Cog):
     """
@@ -17,6 +23,7 @@ class Unbans(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.ban_appeal_server_id = int(os.getenv("BAN_APPEALS_GUILD_ID") or 0)
+        self.bot.tree.on_error = on_tree_error
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
@@ -68,7 +75,7 @@ class Unbans(commands.Cog):
             except discord.Forbidden:
                 await button_interaction.response.send_message(f"I lack the permission to check bans on {guild.name}. "
                                                                f"In order to check this, I need `Ban Members`.")
-                return
+                continue
 
             # If banned, create/add the role corresponding to guild
             else:
@@ -92,7 +99,7 @@ class Unbans(commands.Cog):
 
         found_channels = []
         if roles:
-            guild_ids = [r.guild.id for r in roles]
+            guild_ids = [r.name for r in roles]
             for guild_id in guild_ids:
                 if c := discord.utils.get(button_interaction.guild.text_channels, topic=str(guild_id)):
                     found_channels.append(c)
