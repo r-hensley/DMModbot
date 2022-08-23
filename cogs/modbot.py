@@ -297,9 +297,6 @@ class Modbot(commands.Cog):
 
         await q_msg.edit(view=view)  # add view to message
 
-        spam_chn = self.bot.get_channel(275879535977955330)
-        await spam_chn.send(f"button1: {button1.custom_id}, button2: {button2.custom_id}")
-
         def check(i):
             return i.type == discord.InteractionType.component and \
                    i.data.get("custom_id", "") in [button1.custom_id, button2.custom_id]
