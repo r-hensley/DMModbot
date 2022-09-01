@@ -4,10 +4,10 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from textwrap import dedent
-from typing import Optional, Union, Tuple
+from typing import Optional, Union
 
 import discord
-from discord import Guild, app_commands
+from discord import Guild
 from discord.ext import commands
 
 from .utils.db_utils import get_thread_id_to_thread_info
@@ -40,6 +40,8 @@ dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 # }
 
 EXEMPTED_BOT_PREFIXES = ['_', ';', '.', ',', '>', '&', 't!', 't@', '$', '!', '?']
+SP_SERV_ID = 243838819743432704
+
 
 async def _send_typing_notif(self, channel, user):
     if type(channel) != discord.DMChannel:
@@ -201,7 +203,7 @@ class Modbot(commands.Cog):
             elif len(shared_guilds) == 1:
                 if shared_guilds[0].id in self.bot.db['guilds']:
                     main_or_secondary: str
-                    guild, main_or_secondary = await self.confirm_guild(msg, shared_guilds[0])
+                    guild, main_or_secondary = await self.confirm_guild(msg.author, shared_guilds[0])
                     return guild, main_or_secondary
 
                 else:
@@ -266,11 +268,12 @@ class Modbot(commands.Cog):
         if guild.id not in self.bot.db['guilds']:
             return None, None
 
-        guild, main_or_secondary = await self.confirm_guild(msg, guild)
+        guild, main_or_secondary = await self.confirm_guild(msg.author, guild)
         return guild, main_or_secondary
 
-    async def confirm_guild(self, msg: discord.Message, guild: discord.Guild) -> Union[
-        tuple[None, None], tuple[Guild, str]]:
+    async def confirm_guild(self,
+                            author: Union[discord.User, discord.Member],
+                            guild: discord.Guild) -> Union[tuple[None, None], tuple[Guild, str]]:
         txt = (f"Hello, you are trying to start a support ticket/report with "
                f"the mods of {guild.name}.\n\n"
                "**Please push one of the below buttons.**")
@@ -287,7 +290,7 @@ class Modbot(commands.Cog):
         cancel_str = {"en": "Nevermind, cancel this menu.",
                       "es": "Olvídalo, cancela este menú",
                       'ja': "なんでもない、このメニューを閉じてください"}
-        user_locale = self.get_user_locale(msg.author.id)
+        user_locale = self.get_user_locale(author.id)
         report_button = discord.ui.Button(label=report_str.get(user_locale),
                                           style=discord.ButtonStyle.primary, row=1)
         account_q_button = discord.ui.Button(label=account_q_str.get(user_locale),
@@ -297,12 +300,17 @@ class Modbot(commands.Cog):
         cancel_button = discord.ui.Button(label=cancel_str.get(user_locale),
                                           style=discord.ButtonStyle.red, row=4)
 
-        q_msg = await msg.channel.send(txt)
+        if not author.dm_channel:
+            try:
+                await author.create_dm()
+            except discord.Forbidden:
+                return None, None
+        q_msg = await author.dm_channel.send(txt)
 
         # delete original message if user pushes a button
         async def button_callback1(button_interaction: discord.Interaction):
             locale = button_interaction.locale
-            self.bot.db['user_localizations'][msg.author.id] = str(locale)
+            self.bot.db['user_localizations'][author.id] = str(locale)
             await q_msg.delete()
             first_msg_conf = {"en": "I've sent your first message",
                               "es": "He enviado tu primer mensaje",
@@ -311,7 +319,7 @@ class Modbot(commands.Cog):
             await button_interaction.response.send_message(conf_txt, ephemeral=True)
 
         async def button_callback2(button_interaction: discord.Interaction):
-            self.bot.db['user_localizations'][msg.author.id] = str(button_interaction.locale)
+            self.bot.db['user_localizations'][author.id] = str(button_interaction.locale)
             await q_msg.delete()
             await button_interaction.response.send_message("Canceling report",
                                                            ephemeral=True)
@@ -396,7 +404,7 @@ class Modbot(commands.Cog):
 
         # #### SPECIAL STUFF FOR SP SERVER ####
         # Turn away new users asking for a role
-        if guild.id == 243838819743432704 and not ban_appeal:
+        if guild.id == SP_SERV_ID and not ban_appeal:
             report_room = guild.get_channel(713314015014551573)
             getting_started = guild.get_channel(995684697726267492)
             learning_roles = guild.get_channel(1000558208227745813)
@@ -484,7 +492,7 @@ class Modbot(commands.Cog):
                     "not_anonymous": False,
                 }
 
-                if not ban_appeal:
+                if not ban_appeal and msg:
                     user_text = f">>> {author.mention}: {msg.content}"
                     if len(user_text) > 2000:
                         await report_thread.send(user_text[:2000])
@@ -498,6 +506,8 @@ class Modbot(commands.Cog):
                             await report_thread.send(f">>> {attachment.url}")
                     if msg.embeds:
                         await report_thread.send(embed=msg.embeds[0])
+                if not msg:
+                    await report_thread.send("NOTE: The user has not sent a message yet.")
 
             except discord.Forbidden:
                 await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
@@ -617,34 +627,27 @@ class Modbot(commands.Cog):
             cont = cont2 = None
 
         try:
-            if len(msg.embeds) >= 1:
-                for embed in msg.embeds:
-                    await open_report.dest.send(embed=embed)
+            if msg.embeds:
+                await open_report.dest.send(embeds=msg.embeds)
 
             if msg.attachments:
                 for attachment in msg.attachments:
                     await open_report.dest.send(f">>> {attachment.url}")
 
             if cont:
-                try:
-                    await open_report.dest.send(cont)
-                except discord.Forbidden:
-                    await self.close_room(open_report, True)
+                await open_report.dest.send(cont)
 
             if cont2:
-                try:
-                    await open_report.dest.send(cont2)
-                except discord.Forbidden:
-                    await self.close_room(open_report, True)
+                await open_report.dest.send(cont2)
 
         except discord.Forbidden:
             if open_report.dest == open_report.user.dm_channel:
-                await msg.channel.send("I couldn't send a message to the user (maybe they blocked me). "
-                                       "I have closed the chat.")
+                await msg.channel.send("I couldn't send a message to the user (maybe they blocked me or left "
+                                       "the server). I will close the chat.")
 
             elif open_report.dest == open_report.thread:
                 await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
-                                       "of the report channel. I have closed this chat.")
+                                       "of the report channel. I will close this chat.")
             await self.close_room(open_report, False)
 
     @staticmethod
@@ -749,6 +752,11 @@ class Modbot(commands.Cog):
                 return time_remaining
 
         return 0
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        self.bot.db['user_localizations'][interaction.user.id] = str(interaction.locale)[:2]
+
 
 
 async def setup(bot):

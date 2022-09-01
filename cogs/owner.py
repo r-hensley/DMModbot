@@ -7,6 +7,7 @@ import json
 import sys
 from copy import deepcopy
 from contextlib import redirect_stdout
+from typing import Optional
 
 import discord
 from discord.ext import commands
@@ -22,6 +23,9 @@ UNITARITY_ID = 528770932613971988  # Ryry alt
 
 MAIN_MODBOT_ID = 713245294657273856
 MAIN_RYRY_TEST_BOT_ID = 536170400871219222
+
+SP_SERV_ID = 243838819743432704
+RY_TEST_SERV_ID = 275146036178059265
 
 
 class Owner(commands.Cog):
@@ -172,6 +176,21 @@ class Owner(commands.Cog):
         await self.bot.get_user(self.bot.owner_id).send(msg)
         await self.bot.get_user(self.bot.owner_id).send("Channels: \n" +
                                                         '\n'.join([channel.name for channel in guild.channels]))
+
+    @commands.command()
+    async def sync(self, ctx: Optional[commands.Context]):
+        """Syncs app commands"""
+        # Sync interactions here in this file
+        bot_guilds = [g.id for g in self.bot.guilds]
+        for guild_id in [SP_SERV_ID, RY_TEST_SERV_ID]:
+            if guild_id in bot_guilds:
+                guild_object = discord.Object(id=guild_id)
+                await self.bot.tree.sync(guild=guild_object)
+
+        try:
+            await ctx.message.add_reaction("♻")
+        except (discord.HTTPException, discord.Forbidden, discord.NotFound):
+            await ctx.send(f"**`interactions: commands synced`**", delete_after=5.0)
 
 
 async def dump_json(ctx):

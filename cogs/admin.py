@@ -1,9 +1,11 @@
 import os
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from .owner import dump_json
+from .modbot import Modbot
 from .utils.db_utils import get_thread_id_to_thread_info
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -19,6 +21,9 @@ INSTRUCTIONS = """・`end` or `done` - Finish the current report.
 ・`_not_anonymous` - Type this during a report session to reveal moderator names for future messages. You can 
 　enter it again to return to anonymity at any time during the session, and it'll be automatically reset to default   
 　anonymity after the session ends."""
+
+SP_SERV_ID = 243838819743432704
+RY_TEST_SERV_ID = 275146036178059265
 
 
 def is_admin(ctx):
@@ -158,6 +163,41 @@ class Admin(commands.Cog):
                 await ctx.message.add_reaction("✅")
             except (discord.Forbidden, discord.NotFound):
                 pass
+
+    @app_commands.command()
+    @app_commands.default_permissions()
+    @app_commands.guilds(SP_SERV_ID, RY_TEST_SERV_ID)
+    async def create_report_button(self, interaction: discord.Interaction):
+        """Creates a report button in the current channel"""
+        text = ("Click the button to start a report or support ticket with the staff.\n"
+                "Haz clic en el botón para iniciar un reporte o un ticket de soporte con el staff.")
+        button_text = "Start report or support ticket"
+
+        embed = discord.Embed(description=text, color=0x7270f8)
+
+        button = discord.ui.Button(label=button_text, style=discord.ButtonStyle.primary)
+
+        async def button_callback(button_interaction: discord.Interaction):
+            cog: Modbot = self.bot.get_cog("Modbot")
+            try:
+                await button_interaction.user.create_dm()
+            except discord.Forbidden:
+                await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
+            await button_interaction.response.send_message(f"Check your private messages from me → \n"
+                                                           f"{button_interaction.user.dm_channel.jump_url}/{'9'*19}",
+                                                           ephemeral=True)
+            guild, main_or_secondary = await cog.confirm_guild(button_interaction.user, button_interaction.guild)
+            await cog.start_report_room(button_interaction.user, guild, msg=None,
+                                        main_or_secondary=main_or_secondary, ban_appeal=False)
+
+        button.callback = button_callback
+        view = discord.ui.View(timeout=None)
+        view.add_item(button)
+
+        msg = await interaction.channel.send(embed=embed)
+        await msg.edit(view=view)
+
+        await interaction.response.send_message("I've created the message", ephemeral=True)
 
 
 async def setup(bot):
