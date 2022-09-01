@@ -1,14 +1,13 @@
-import re
-import os
-
 import asyncio
-from inspect import cleandoc
-from typing import Optional, Union
-from textwrap import dedent
-from datetime import datetime
+import os
+import re
 from dataclasses import dataclass
+from datetime import datetime
+from textwrap import dedent
+from typing import Optional, Union, Tuple
 
 import discord
+from discord import Guild, app_commands
 from discord.ext import commands
 
 from .utils.db_utils import get_thread_id_to_thread_info
@@ -40,6 +39,7 @@ dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 #     },
 # }
 
+EXEMPTED_BOT_PREFIXES = ['_', ';', '.', ',', '>', '&', 't!', 't@', '$', '!', '?']
 
 async def _send_typing_notif(self, channel, user):
     if type(channel) != discord.DMChannel:
@@ -70,6 +70,9 @@ class Modbot(commands.Cog):
         self.bot: commands.Bot = bot
         # dict w/ key ID and value of last left report room time
         self.recently_in_report_room = {}
+
+    def get_user_locale(self, user_id: int) -> str:
+        return self.bot.db.get('user_localizations', {}).get(user_id, 'en')[:2]
 
     # main code is here
     @commands.Cog.listener()
@@ -114,9 +117,11 @@ class Modbot(commands.Cog):
 
         # try to put user into report room
         else:
+            guild: discord.Guild
+            main_or_secondary: str  # "main" means main report room, "secondary" means report room for staff
             try:  # the user selects to which server they want to connect
                 self.bot.db['settingup'].append(msg.author.id)
-                guild: discord.Guild = await self.server_select(msg)
+                guild, main_or_secondary = await self.server_select(msg)
                 self.bot.db['settingup'].remove(msg.author.id)
             except Exception:
                 self.bot.db['settingup'].remove(msg.author.id)
@@ -126,7 +131,8 @@ class Modbot(commands.Cog):
             # they've selected a server to make a report to, put them in that server's report room
             try:
                 if guild:
-                    await self.start_report_room(msg.author, guild, msg, ban_appeal=False)  # bring user to report room
+                    await self.start_report_room(msg.author, guild, msg,
+                                                 main_or_secondary, ban_appeal=False)  # bring user to report room
                 return True  # if it worked
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -173,38 +179,47 @@ class Modbot(commands.Cog):
 
     #
     # for first entering a user into the report room
-    async def server_select(self, msg: discord.Message) -> Optional[discord.Guild]:
+    async def server_select(self, msg: discord.Message) -> Union[tuple[None, None], tuple[discord.Guild, str]]:
         """From the entry message into the DMs by a user, ask them which server they want to connect to, and return
         a guild object."""
         shared_guilds = sorted(
             [g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
 
-        appeals_server = self.bot.get_guild(int(os.getenv("BAN_APPEALS_GUILD_ID")))
+        appeals_server = self.bot.get_guild(int(os.getenv("BAN_APPEALS_GUILD_ID") or 0))
         if appeals_server:
             try:
                 shared_guilds.remove(appeals_server)
             except ValueError:
                 pass
 
-        guild = None
+        guild: Optional[discord.Guild] = None
         if not guild:
             if len(shared_guilds) == 0:
                 await msg.channel.send("I couldn't find any common guilds between us. Frankly, I don't know how you're "
                                        "messaging me. Have a nice day.")
-                return
+                return None, None
             elif len(shared_guilds) == 1:
                 if shared_guilds[0].id in self.bot.db['guilds']:
-                    guild = await self.confirm_guild(msg, shared_guilds[0])
-                    return guild
+                    main_or_secondary: str
+                    guild, main_or_secondary = await self.confirm_guild(msg, shared_guilds[0])
+                    return guild, main_or_secondary
 
                 else:
                     await msg.channel.send("We only share one guild, but that guild has not setup their report room"
                                            " yet. Please tell the mods to type `_setup` in some channel.")
-                    return
+                    return None, None
             else:
-                msg_text = "Hello, thank you for messaging me. Please select which " \
-                           "server want to connect to. To do this, reply with the `number` before your " \
-                           "server (for example, you can reply with the single number `3`.)"
+                msg_text = {"en": "Hello, thank you for messaging me. Please select which "
+                                  "server want to connect to. To do this, reply with the `number` before your "
+                                  "server (for example, you can reply with the single number `3`.)",
+                            "es": "Hola, gracias por enviarme un mensaje. Por favor, selecciona a qué servidor "
+                                  "quieres conectarte. Para hacer esto, responda con el `número` antes de su "
+                                  "servidor (por ejemplo, puede responder sólo con el número `3`)",
+                            "ja": "こんにちは、メッセージありがとうございます。どのサーバーに接続したいかを選択してください。"
+                                  "これを行うには、以下のサーバーの一つの名前の前にある数字を書いて返信してください "
+                                  "(例えば、`3` という単一の数字で返信したら接続できます)。"}
+                locale = self.get_user_locale(msg.author.id)
+                msg_text = msg_text[locale]
                 index = 1
                 msg_embed = ''
                 for i_guild in shared_guilds:
@@ -215,7 +230,7 @@ class Modbot(commands.Cog):
                 try:
                     conf = await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
                 except AttributeError:
-                    return
+                    return None, None
                 try:
                     resp = await self.bot.wait_for('message',
                                                    check=lambda m: m.author == msg.author and m.channel == msg.channel,
@@ -226,13 +241,14 @@ class Modbot(commands.Cog):
                     except (discord.Forbidden, discord.HTTPException):
                         pass
                     await msg.channel.send("You've waited too long. Module closing.")
-                    return
+                    return None, None
                 try:
                     await conf.delete()
                 except (discord.Forbidden, discord.HTTPException):
                     pass
+
                 if resp.content.casefold() == 'cancel':
-                    return
+                    return None, None
                 guild_selection = re.findall(r"^\d{1,2}$", resp.content)
                 if guild_selection:
                     guild_selection = guild_selection[0]
@@ -241,27 +257,45 @@ class Modbot(commands.Cog):
                     except IndexError:
                         await msg.channel.send("I didn't understand which guild you responded with. "
                                                "Please respond with only a single number.")
-                        return
+                        return None, None
                 else:
                     await msg.channel.send("I didn't understand which guild you responded with. "
                                            "Please respond with only a single number.")
-                    return
+                    return None, None
 
         if guild.id not in self.bot.db['guilds']:
-            return
+            return None, None
 
-        guild = await self.confirm_guild(msg, guild)
-        return guild
+        guild, main_or_secondary = await self.confirm_guild(msg, guild)
+        return guild, main_or_secondary
 
-    async def confirm_guild(self, msg: discord.Message, guild: discord.Guild) -> Optional[discord.Guild]:
+    async def confirm_guild(self, msg: discord.Message, guild: discord.Guild) -> Union[
+        tuple[None, None], tuple[Guild, str]]:
         txt = (f"Hello, you are trying to start a support ticket/report with "
-               f"the mods of {guild.name}. Is that correct?\n\n"
+               f"the mods of {guild.name}.\n\n"
                "**Please push one of the below buttons.**")
         view = discord.ui.View(timeout=180)
-        button1 = discord.ui.Button(label="Yes, connect me to the mods",
-                                    style=discord.ButtonStyle.primary, row=1)
-        button2 = discord.ui.Button(label="No, don't send my message",
-                                    style=discord.ButtonStyle.red, row=2)
+        report_str = {'en': "I want to report a user",
+                      'es': "Quiero reportar a un usuario",
+                      'ja': "他のユーザーを通報したい"}
+        account_q_str = {'en': "I have a question about my account",
+                         'es': "Tengo una pregunta sobre mi cuenta",
+                         'ja': "自分のアカウントについて質問がある"}
+        server_q_str = {'en': "I have a question about the server",
+                        'es': "Tengo una pregunta sobre el servidor",
+                        'ja': "サーバーについて質問がある"}
+        cancel_str = {"en": "Nevermind, cancel this menu.",
+                      "es": "Olvídalo, cancela este menú",
+                      'ja': "なんでもない、このメニューを閉じてください"}
+        user_locale = self.get_user_locale(msg.author.id)
+        report_button = discord.ui.Button(label=report_str.get(user_locale),
+                                          style=discord.ButtonStyle.primary, row=1)
+        account_q_button = discord.ui.Button(label=account_q_str.get(user_locale),
+                                             style=discord.ButtonStyle.primary, row=2)
+        server_q_button = discord.ui.Button(label=server_q_str.get(user_locale),
+                                            style=discord.ButtonStyle.secondary, row=3)
+        cancel_button = discord.ui.Button(label=cancel_str.get(user_locale),
+                                          style=discord.ButtonStyle.red, row=4)
 
         q_msg = await msg.channel.send(txt)
 
@@ -270,24 +304,24 @@ class Modbot(commands.Cog):
             locale = button_interaction.locale
             self.bot.db['user_localizations'][msg.author.id] = str(locale)
             await q_msg.delete()
-            if str(locale).startswith('es'):
-                conf_txt = "He enviado su primer mensaje."
-            elif str(locale) == 'ja':
-                conf_txt = "あなたの最初のメッセージを送りました。"
-            else:
-                conf_txt = "I've sent your first message."
+            first_msg_conf = {"en": "I've sent your first message",
+                              "es": "He enviado tu primer mensaje",
+                              "ja": "あなたの最初のメッセージを送信しました。"}
+            conf_txt = first_msg_conf.get(str(locale)[:2], first_msg_conf['en'])
             await button_interaction.response.send_message(conf_txt, ephemeral=True)
 
         async def button_callback2(button_interaction: discord.Interaction):
-            self.bot.db['user_localizations'][str(msg.author.id)] = button_interaction.locale
+            self.bot.db['user_localizations'][msg.author.id] = str(button_interaction.locale)
             await q_msg.delete()
             await button_interaction.response.send_message("Canceling report",
                                                            ephemeral=True)
 
-        button1.callback = button_callback1
-        button2.callback = button_callback2
-        view.add_item(button1)
-        view.add_item(button2)
+        report_button.callback = account_q_button.callback = server_q_button.callback = button_callback1
+        cancel_button.callback = button_callback2
+        view.add_item(report_button)
+        view.add_item(account_q_button)
+        view.add_item(server_q_button)
+        view.add_item(cancel_button)
 
         async def on_timeout():
             await q_msg.edit(content="I did not receive a response from you. Please try to send your "
@@ -299,26 +333,33 @@ class Modbot(commands.Cog):
 
         def check(i):
             return i.type == discord.InteractionType.component and \
-                   i.data.get("custom_id", "") in [button1.custom_id, button2.custom_id]
+                   i.data.get("custom_id", "") in [report_button.custom_id, account_q_button.custom_id,
+                                                   server_q_button.custom_id, cancel_button.custom_id]
 
         try:
             interaction = await self.bot.wait_for("interaction", timeout=180.0, check=check)
         except asyncio.TimeoutError:
-            return  # no button pressed
+            return None, None  # no button pressed
         else:
-            if interaction.data.get("custom_id", "") == button1.custom_id:
-                return guild
+            if interaction.data.get("custom_id", "") in [report_button.custom_id, account_q_button.custom_id]:
+                return guild, 'main'
+            elif interaction.data.get("custom_id", "") == server_q_button.custom_id:
+                return guild, 'secondary'
             else:
-                return
+                return None, None
 
     async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message],
-                                ban_appeal=False):
+                                main_or_secondary: str, ban_appeal=False):
         """Performs initial code for bringing a user's first message into the report room and setting up the
         connection between the user and the mods.
 
         If this report is a ban appeal from the ban appeals server, then msg will be None and ban_appeal will be True"""
         guild_config = self.bot.db['guilds'][guild.id]
-        report_channel: discord.Thread = self.bot.get_channel(guild_config['channel'])
+        if main_or_secondary == 'main':
+            report_channel: discord.Thread = self.bot.get_channel(guild_config['channel'])
+        else:  # main_or_secondary == 'secondary'
+            report_channel: discord.Thread = self.bot.get_channel(guild_config.get('secondary_channel',
+                                                                                   guild_config.get('channel')))
 
         perms = report_channel.permissions_for(guild.me)
         if not perms.send_messages or not perms.create_public_threads:
@@ -414,6 +455,8 @@ class Modbot(commands.Cog):
                    - For example, `Hello` would be sent, but 
                       `_What should we do` or bot
                       commands would not be sent.
+                      Currently exempted bot prefixes:
+                      `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
                 
                 **Report starts here
                 __{' ' * 70}__**
@@ -438,7 +481,7 @@ class Modbot(commands.Cog):
                     "thread_id": report_thread.id,
                     "guild_id": report_thread.guild.id,
                     "mods": [],
-                    "not_anonymous": False
+                    "not_anonymous": False,
                 }
 
                 if not ban_appeal:
@@ -526,7 +569,7 @@ class Modbot(commands.Cog):
                            msg: discord.Message,
                            open_report: OpenReport):
         if msg.content:
-            for prefix in ['_', ';', '.', ',', '>>', '&', 't!', 't@', '$']:
+            for prefix in EXEMPTED_BOT_PREFIXES:
                 # messages starting with _ or other bot prefixes
                 if msg.content.startswith(prefix):
                     try:

@@ -9,7 +9,10 @@ from .utils.db_utils import get_thread_id_to_thread_info
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 INSTRUCTIONS = """・`end` or `done` - Finish the current report.
-・`_setup` - Reset the room completely (if there's a bug).
+・`_setup` - Setup the main report room (or to reset it completely if there's a bug).
+・`_setup secondary` - Setup or reset a secondary report room for general questions about the server. If not  
+　setup, those questions will still come to this channel. Consider creating this room for a larger group of server 
+　helpers to answer questions that don't need to be answered by the main team of mods on the server.
 ・`_clear` - Clear the waiting list
 ・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you want a user to come 
 　to the report room or send an official mod message to a channel.
@@ -55,8 +58,12 @@ class Admin(commands.Cog):
         await dump_json(ctx)
 
     @commands.command()
-    async def setup(self, ctx):
-        """Sets the current channel as the report room, or resets the report module"""
+    async def setup(self, ctx, secondary: str = ""):
+        """Sets the current channel as the report room, or resets the report module.
+
+        Type `_setup secondary` to setup a secondary report room for users who have
+        just questions about the server in general rather than reports. Consider opening
+        this room up to a group of server helpers rather than the main mods only."""
         guilds = self.bot.db['guilds']
         if ctx.guild.id not in guilds:
             guilds[ctx.guild.id] = {'mod_role': None}
@@ -64,12 +71,27 @@ class Admin(commands.Cog):
         if not guild_config.get("mod_role"):
             await ctx.send("Please configure the mod role first using `_setmodrole`.")
             return
-        guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role']}
-        await ctx.send(f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
-                       f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
-                       f"on helpful commands for the bot")
-        await ctx.send(INSTRUCTIONS)
-        await dump_json(ctx)
+
+        main_msg = (f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
+                    f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
+                    f"on helpful commands for the bot")
+
+        if secondary == 'secondary':
+            if 'channel' not in guilds.get(ctx.guild.id, {}):
+                await ctx.send("Please set up the main report room first by typing just `_setup`.")
+                return
+
+            main_msg = main_msg.replace("report channel", "secondary report channel")
+            guilds[ctx.guild.id]['secondary_channel'] = ctx.channel.id
+            await ctx.send(main_msg)
+            await ctx.send(INSTRUCTIONS)
+            await dump_json(ctx)
+
+        else:
+            guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role']}
+            await ctx.send(main_msg)
+            await ctx.send(INSTRUCTIONS)
+            await dump_json(ctx)
 
     @commands.command()
     async def setmodrole(self, ctx, *, role_name):

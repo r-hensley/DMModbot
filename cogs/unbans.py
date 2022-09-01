@@ -27,6 +27,9 @@ class Unbans(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
+        if not msg.guild:
+            return
+
         ban_appeal_server = self.bot.get_guild(self.ban_appeal_server_id)
         if msg.guild == ban_appeal_server and msg.author != msg.guild.me:
             if msg.channel.category.name == 'servers' or msg.channel.name == 'start_here':
@@ -165,17 +168,17 @@ class Unbans(commands.Cog):
         view.add_item(cancellation_button)
 
         async def on_timeout():
-            await button_interaction.edit_original_message(view=None)
+            await button_interaction.edit_original_response(view=None)
 
         view.on_timeout = on_timeout
 
         async def confirmation_callback(confirmation_interaction: discord.Interaction):
             await confirmation_interaction.response.send_message(final_text, ephemeral=True)
-            await button_interaction.edit_original_message(view=None)
+            await button_interaction.edit_original_response(view=None)
             await self.start_ban_appeal(confirmation_interaction.user, guild)
 
         async def cancellation_callback(cancellation_confirmation: discord.Interaction):
-            await button_interaction.edit_original_message(view=None)
+            await button_interaction.edit_original_response(view=None)
             await cancellation_confirmation.response.send_message(cancelation_confirmation, ephemeral=True)
 
         confirmation_button.callback = confirmation_callback
