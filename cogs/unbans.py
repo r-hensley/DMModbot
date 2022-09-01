@@ -187,7 +187,7 @@ class Unbans(commands.Cog):
 
     async def start_ban_appeal(self, user: discord.User, guild: discord.Guild):
         cog: Modbot = self.bot.get_cog("Modbot")
-        await cog.start_report_room(user, guild, msg=None, ban_appeal=True)
+        await cog.start_report_room(user, guild, msg=None, main_or_secondary="main", ban_appeal=True)
 
 
 async def setup(bot):
