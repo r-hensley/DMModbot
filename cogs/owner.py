@@ -1,3 +1,5 @@
+import asyncio
+import importlib
 import os
 import io
 import traceback
@@ -13,6 +15,7 @@ import discord
 from discord.ext import commands
 
 from .utils.db_utils import int_keys_to_str_keys
+from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -66,17 +69,32 @@ class Owner(commands.Cog):
             pass
 
     @commands.command(hidden=True)
-    async def reload(self, ctx, *, cog: str):
+    async def reload(self, ctx, *, cogs: str):
         try:
             await ctx.message.delete()
         except discord.Forbidden:
             pass
-        try:
-            await self.bot.reload_extension(f'cogs.{cog}')
-        except Exception as e:
-            await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
-        else:
-            await ctx.send('**`SUCCESS`**', delete_after=5.0)
+        for cog in cogs.split():
+            if cog in ['hf', 'helper_function']:
+                try:
+                    old_module = sys.modules['cogs.utils.helper_functions']
+                    importlib.reload(sys.modules['cogs.utils.helper_functions'])
+                    hf.setup(bot=self.bot, loop=asyncio.get_event_loop())  # this is to define here.bot in the hf file
+                except Exception as e:
+                    await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
+                else:
+                    await ctx.send(f'**`{cog}: SUCCESS`**', delete_after=5.0)
+
+            else:
+                try:
+                    await self.bot.reload_extension(f'cogs.{cog}')
+                    if cog == 'interactions':
+                        sync = self.bot.get_command('sync')
+                        await ctx.invoke(sync)
+                except Exception as e:
+                    await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
+                else:
+                    await ctx.send(f' **`{cog}: SUCCESS`**', delete_after=5.0)
 
     @staticmethod
     def cleanup_code(content):
