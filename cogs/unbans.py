@@ -11,7 +11,24 @@ TEST_SERVER_ID = 275146036178059265
 
 
 async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    await hf.send_error_embed(interaction.client, interaction, error)
+    qualified_name = getattr(interaction.command, 'qualified_name', interaction.command.name)
+    e = discord.Embed(title=f'App Command Error ({interaction.type})', colour=0xcc3366)
+    e.add_field(name='Name', value=qualified_name)
+    e.add_field(name='Author', value=interaction.user)
+
+    fmt = f'Channel: {interaction.channel} (ID: {interaction.channel.id})'
+    if interaction.guild:
+        fmt = f'{fmt}\nGuild: {interaction.guild} (ID: {interaction.guild.id})'
+
+    e.add_field(name='Location', value=fmt, inline=False)
+
+    if interaction.data:
+        e.add_field(name="Data", value=f"```{interaction.data}```")
+
+    if interaction.extras:
+        e.add_field(name="Extras", value=f"```{interaction.extras}```")
+
+    await hf.send_error_embed(interaction.client, interaction, error, e)
 
 
 class Unbans(commands.Cog):

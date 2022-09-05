@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-import logging
+import asyncio
 
 import discord
 from discord.ext.commands import Bot
@@ -13,19 +13,11 @@ from dotenv import load_dotenv
 
 import os
 
+from cogs.utils import helper_functions as hf
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
-FORMAT = "%(levelname)s [%(asctime)s %(filename)s->%(funcName)s():%(lineno)s]: %(message)s"
-logging.basicConfig(format=FORMAT, level=logging.INFO)
-
-# logger = logging.getLogger('discord')
-# logger.setLevel(logging.INFO)
-# handler = logging.FileHandler(
-#     filename=f'{dir_path}/log/{discord.utils.utcnow().strftime("%y%m%d_%H%M")}.log',
-#     encoding='utf-8',
-#     mode='a')
-# handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-# logger.addHandler(handler)
+discord.utils.setup_logging()
 
 # noinspection lines to fix pycharm error saying Intents doesn't have members and Intents is read-only
 intents = discord.Intents.default()
@@ -89,6 +81,8 @@ class Modbot(Bot):
                 traceback.print_exc()
                 raise
 
+        hf.setup(bot=self, loop=asyncio.get_event_loop())  # this is to define here.bot in the hf file
+
     async def on_ready(self):
         print("Bot loaded")
         self.log_channel = self.get_channel(int(os.getenv("LOG_CHANNEL_ID")))
@@ -133,7 +127,7 @@ class Modbot(Bot):
         await self.error_channel.send(jump_url, embed=e)
         traceback.print_exc()
 
-    async def on_command_error(self, ctx, error):
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         if isinstance(error, commands.BadArgument):
             # parsing or conversion failure is encountered on an argument to pass into a command.
             await ctx.send(f"Failed to find the object you tried to look up.  Please try again")
@@ -153,7 +147,8 @@ class Modbot(Bot):
                 pass
 
         elif isinstance(error, commands.BotMissingPermissions):
-            msg = f"To do that command, Rai is missing the following permissions: `{'`, `'.join(error.missing_perms)}`"
+            msg = f"To do that command, Rai is missing the following permissions: " \
+                  f"`{'`, `'.join(error.missing_permissions)}`"
             try:
                 await ctx.send(msg)
             except discord.Forbidden:
@@ -214,38 +209,25 @@ class Modbot(Bot):
 
         elif isinstance(error, commands.MissingPermissions):
             await ctx.send(f"To do that command, you are missing the following permissions: "
-                           f"`{'`, `'.join(error.missing_perms)}`")
+                           f"`{'`, `'.join(error.missing_permissions)}`")
             return
 
         elif isinstance(error, commands.NotOwner):
             await ctx.send(f"Only Ryan can do that.")
             return
 
-        print(datetime.now())
-        error = getattr(error, 'original', error)
-        qualified_name = getattr(
-            ctx.command, 'qualified_name', ctx.command.name)
-        print(f'Error in {qualified_name}:', file=sys.stderr)
-        traceback.print_tb(error.__traceback__)
-        print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
-
+        qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
         e = discord.Embed(title='Command Error', colour=0xcc3366)
-        e.add_field(name='Name  ', value=qualified_name)
+        e.add_field(name='Name', value=qualified_name)
         e.add_field(name='Command', value=ctx.message.content[:1000])
         e.add_field(name='Author', value=f'{ctx.author} (ID: {ctx.author.id})')
 
         fmt = f'Channel: {ctx.channel} (ID: {ctx.channel.id})'
         if ctx.guild:
             fmt = f'{fmt}\nGuild: {ctx.guild} (ID: {ctx.guild.id})'
-
         e.add_field(name='Location', value=fmt, inline=False)
 
-        exc = ''.join(traceback.format_exception(
-            type(error), error, error.__traceback__, chain=False))
-        traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
-        e.timestamp = discord.utils.utcnow()
-        await self.error_channel.send(traceback_text, embed=e)
-        print('')
+        await hf.send_error_embed(self, ctx, error, e)
 
 
 def run_bot():
