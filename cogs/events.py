@@ -30,6 +30,8 @@ class Events(commands.Cog):
         servers_category = discord.utils.find(lambda c: c.name.casefold() == 'servers', ban_appeals_guild.categories)
         guild_id_to_role_dict: dict[int, discord.Role] = {}
         
+        server_moderator_role = ban_appeals_guild.get_role(1024206163715297341)
+        
         for role in ban_appeals_guild.roles:
             # most role names will be named after a guild ID
             try:
@@ -50,7 +52,7 @@ class Events(commands.Cog):
             perms = member_in_guild.guild_permissions
             if perms.administrator or perms.manage_guild:
                 try:
-                    await member.add_roles(role)
+                    await member.add_roles(role, server_moderator_role)
                     await member.send("I've given you special access to the appeals channel for your server. Normally "
                                       "users will only be able to see this if they are banned on your server. If you "
                                       "wish, you can send a message to this channel and it will overwrite the "
