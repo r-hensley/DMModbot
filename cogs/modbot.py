@@ -221,7 +221,7 @@ class Modbot(commands.Cog):
                                   "これを行うには、以下のサーバーの一つの名前の前にある数字を書いて返信してください "
                                   "(例えば、`3` という単一の数字で返信したら接続できます)。"}
                 locale = self.get_user_locale(msg.author.id)
-                msg_text = msg_text[locale]
+                msg_text = msg_text.get(locale, msg_text['en'])
                 index = 1
                 msg_embed = ''
                 for i_guild in shared_guilds:
@@ -291,13 +291,13 @@ class Modbot(commands.Cog):
                       "es": "Olvídalo, cancela este menú",
                       'ja': "なんでもない、このメニューを閉じてください"}
         user_locale = self.get_user_locale(author.id)
-        report_button = discord.ui.Button(label=report_str.get(user_locale),
+        report_button = discord.ui.Button(label=report_str.get(user_locale) or report_str['en'],
                                           style=discord.ButtonStyle.primary, row=1)
-        account_q_button = discord.ui.Button(label=account_q_str.get(user_locale),
+        account_q_button = discord.ui.Button(label=account_q_str.get(user_locale) or report_str['en'],
                                              style=discord.ButtonStyle.primary, row=2)
-        server_q_button = discord.ui.Button(label=server_q_str.get(user_locale),
+        server_q_button = discord.ui.Button(label=server_q_str.get(user_locale) or report_str['en'],
                                             style=discord.ButtonStyle.secondary, row=3)
-        cancel_button = discord.ui.Button(label=cancel_str.get(user_locale),
+        cancel_button = discord.ui.Button(label=cancel_str.get(user_locale) or report_str['en'],
                                           style=discord.ButtonStyle.red, row=4)
 
         if not author.dm_channel:
