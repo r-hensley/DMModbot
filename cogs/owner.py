@@ -183,18 +183,6 @@ class Owner(commands.Cog):
         except Exception as e:
             await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
 
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild):
-        msg = f"""__New guild__
-        **Name:** {guild.name}
-        **Owner:** {guild.owner.mention} ({guild.owner.name}#{guild.owner.discriminator}))
-        **Members:** {guild.member_count}
-        **Channels:** {len(guild.text_channels)} text / {len(guild.voice_channels)} voice"""
-
-        await self.bot.get_user(self.bot.owner_id).send(msg)
-        await self.bot.get_user(self.bot.owner_id).send("Channels: \n" +
-                                                        '\n'.join([channel.name for channel in guild.channels]))
-
     @commands.command()
     async def sync(self, ctx: Optional[commands.Context]):
         """Syncs app commands"""

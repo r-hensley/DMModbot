@@ -753,10 +753,6 @@ class Modbot(commands.Cog):
 
         return 0
 
-    @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        self.bot.db['user_localizations'][interaction.user.id] = str(interaction.locale)[:2]
-
 
 
 async def setup(bot):

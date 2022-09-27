@@ -80,7 +80,8 @@ class Unbans(commands.Cog):
         roles = []
         for guild in self.bot.guilds:
             # Check if there's a channel in the appeals server corresponding to guild
-            channel = discord.utils.get(button_interaction.guild.text_channels, topic=str(guild.id))
+            channel = discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild.id), 
+                                         button_interaction.guild.text_channels)
             if not channel:
                 continue
 
@@ -119,9 +120,10 @@ class Unbans(commands.Cog):
 
         found_channels = []
         if roles:
-            guild_ids = [r.name for r in roles]
+            guild_ids = [r.name.split('_')[0] for r in roles]
             for guild_id in guild_ids:
-                if c := discord.utils.get(button_interaction.guild.text_channels, topic=str(guild_id)):
+                if c := discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild.id), 
+                                           button_interaction.guild.text_channels):
                     found_channels.append(c)
 
         if button_interaction.user.id == RYRY_ID:
@@ -144,7 +146,7 @@ class Unbans(commands.Cog):
         to open a ban appeal"""
         locale = button_interaction.locale
         try:
-            guild_id = int(button_interaction.channel.topic)
+            guild_id = int(button_interaction.channel.topic.split('\n')[0])
             guild = self.bot.get_guild(guild_id)
         except TypeError:
             await button_interaction.response.send_message(f"<@{self.bot.owner_id}>: Please set the topic of this "

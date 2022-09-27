@@ -73,7 +73,7 @@ class Modbot(Bot):
         self.error_channel = None
 
     async def setup_hook(self):
-        for extension in ['cogs.modbot', 'cogs.admin', 'cogs.owner', 'cogs.unbans']:
+        for extension in ['cogs.modbot', 'cogs.admin', 'cogs.owner', 'cogs.unbans', 'cogs.events']:
             try:
                 await self.load_extension(extension)
             except Exception as e:
