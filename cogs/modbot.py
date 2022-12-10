@@ -389,18 +389,16 @@ class Modbot(commands.Cog):
             jho = guild.get_channel(189571157446492161)
             member = guild.get_member(author.id)
             if guild.get_role(249695630606336000) in member.roles:  # new user role
-                for word in ['voice', 'role', 'locked', 'tag', 'lang', 'ボイス', 'チャンネル']:
-                    if word in msg.content:
-                        await member.send(f"In order to use the voice channels, you need a language tag first. "
-                                          f"Please state your native language in {jho.mention}.\n"
-                                          f"ボイスチャットを使うにはいずれかの言語ロールが必要です。 "
-                                          f"{jho.mention} にて母語を教えて下さい。")
-                        text = f"{str(author.mention)} came to me with the following message:" \
-                               f"```{msg.content}```" \
-                               f"I assumed they were asking for language tag, so I told them to state their " \
-                               f"native language in JHO and blocked their request to open the report room."
-                        await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
-                        return
+                await member.send(f"In order to use the voice channels or this report bot, you need a language "
+                                  f"tag first. Please state your native language in {jho.mention}.\n"
+                                  f"ボイスチャットかこのボットを使うにはいずれかの言語ロールが必要です。 "
+                                  f"{jho.mention} にて母語を教えて下さい。")
+                text = f"{str(author.mention)} came to me with the following message:" \
+                       f"```{msg.content}```" \
+                       f"I assumed they were asking for language tag, so I told them to state their " \
+                       f"native language in JHO and blocked their request to open the report room."
+                await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
+                return
 
         # #### SPECIAL STUFF FOR SP SERVER ####
         # Turn away new users asking for a role
