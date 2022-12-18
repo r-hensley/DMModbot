@@ -648,6 +648,12 @@ class Modbot(commands.Cog):
                                        "of the report channel. I will close this chat.")
             await self.close_room(open_report, False)
 
+        else:
+            try:
+                await msg.add_reaction("📨")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
     @staticmethod
     async def notify_close_room(source, dest, error):
         is_source_thread = isinstance(source, discord.Thread)
