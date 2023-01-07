@@ -404,8 +404,7 @@ class Modbot(commands.Cog):
         # Turn away new users asking for a role
         if guild.id == SP_SERV_ID and not ban_appeal:
             report_room = guild.get_channel(713314015014551573)
-            getting_started = guild.get_channel(995684697726267492)
-            learning_roles = guild.get_channel(1000558208227745813)
+            getting_started = guild.get_channel(243838819743432704)
             member = guild.get_member(author.id)
             found_role = False  # will be True if the user has one of the roles in native_language_roles
             for role_id in [996468349364092969, 243853718758359040, 243854128424550401, 247020385730691073]:
@@ -415,10 +414,8 @@ class Modbot(commands.Cog):
                     break
 
             if not found_role:  # new user role
-                await member.send(f"To access the server, please read {getting_started.mention} and then choose a "
-                                  f"native language role at the top of {learning_roles.mention}.\n"
-                                  f"Para acceder al servidor, por favor, lee {getting_started.mention} y luego "
-                                  f"elige un rol de idioma nativo en la parte superior de {learning_roles.mention}.")
+                await member.send(f"To access the server, please read {getting_started.mention}.\n"
+                                  f"Para acceder al servidor, por favor, lee {getting_started.mention}.")
                 text = f"{str(author.mention)} came to me with the following message:" \
                        f"```{msg.content}```" \
                        f"I assumed they were asking how to access the server, so I told them to get a native " \
