@@ -60,7 +60,7 @@ class Unbans(commands.Cog):
             if m.author == msg.guild.me:
                 await m.delete()
 
-        view = discord.ui.View(timeout=0)
+        view = hf.RaiView(timeout=0)
         button = discord.ui.Button(style=discord.ButtonStyle.primary, label="Start ban appeal")
         view.add_item(button)
 
@@ -182,7 +182,7 @@ class Unbans(commands.Cog):
 
         confirmation_button = discord.ui.Button(label=confirmation_text)
         cancellation_button = discord.ui.Button(label=cancelation_text)
-        view = discord.ui.View()
+        view = hf.RaiView()
         view.add_item(confirmation_button)
         view.add_item(cancellation_button)
 

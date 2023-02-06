@@ -45,7 +45,7 @@ async def send_error_embed(bot: discord.Client,
     traceback_logging_channel = int(os.getenv("ERROR_CHANNEL_ID"))
     view = None
     if ctx.message:
-        view = discord.ui.View.from_message(ctx.message)
+        view = RaiView.from_message(ctx.message)
     await bot.get_channel(traceback_logging_channel).send(traceback_text[-2000:], embed=embed, view=view)
     print('')
 

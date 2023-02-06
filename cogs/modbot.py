@@ -11,6 +11,7 @@ from discord import Guild
 from discord.ext import commands
 
 from .utils.db_utils import get_thread_id_to_thread_info
+from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -277,7 +278,7 @@ class Modbot(commands.Cog):
         txt = (f"Hello, you are trying to start a support ticket/report with "
                f"the mods of {guild.name}.\n\n"
                "**Please push one of the below buttons.**")
-        view = discord.ui.View(timeout=180)
+        view = hf.RaiView(timeout=180)
         report_str = {'en': "I want to report a user",
                       'es': "Quiero reportar a un usuario",
                       'ja': "他のユーザーを通報したい"}

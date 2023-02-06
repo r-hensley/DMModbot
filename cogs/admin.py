@@ -7,6 +7,7 @@ from discord.ext import commands
 from .owner import dump_json
 from .modbot import Modbot
 from .utils.db_utils import get_thread_id_to_thread_info
+from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -191,7 +192,7 @@ class Admin(commands.Cog):
                                         main_or_secondary=main_or_secondary, ban_appeal=False)
 
         button.callback = button_callback
-        view = discord.ui.View(timeout=None)
+        view = hf.RaiView(timeout=None)
         view.add_item(button)
 
         msg = await interaction.channel.send(embed=embed)
