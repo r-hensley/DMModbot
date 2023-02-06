@@ -101,7 +101,7 @@ class Unbans(commands.Cog):
             # If banned, create/add the role corresponding to guild
             else:
                 try:
-                    role = discord.utils.get(button_interaction.guild.roles, name=str(guild.id))
+                    role = discord.utils.find(lambda r: r.name.startswith(str(guild.id)), button_interaction.guild.roles)
                     if not role:
                         role = await button_interaction.guild.create_role(name=str(guild.id))
                         try:
@@ -122,9 +122,9 @@ class Unbans(commands.Cog):
         if roles:
             guild_ids = [r.name.split('_')[0] for r in roles]
             for guild_id in guild_ids:
-                if c := discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild.id), 
+                if found_channel := discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild_id),
                                            button_interaction.guild.text_channels):
-                    found_channels.append(c)
+                    found_channels.append(found_channel)
 
         if button_interaction.user.id == RYRY_ID:
             found_channels.append(self.bot.get_channel(986061548877410354))
