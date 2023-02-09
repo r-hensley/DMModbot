@@ -21,7 +21,9 @@ INSTRUCTIONS = """・`end` or `done` - Finish the current report.
 　to the report room or send an official mod message to a channel.
 ・`_not_anonymous` - Type this during a report session to reveal moderator names for future messages. You can 
 　enter it again to return to anonymity at any time during the session, and it'll be automatically reset to default   
-　anonymity after the session ends."""
+　anonymity after the session ends.
+・`/block` - Block or unblock a user from entering the report room / making a ban appeal.
+"""
 
 SP_SERV_ID = 243838819743432704
 RY_TEST_SERV_ID = 275146036178059265
