@@ -153,6 +153,19 @@ class Unbans(commands.Cog):
                                                            "channel to just a guild ID and nothing else.")
             return
 
+        if not guild:
+            await button_interaction.response.send_message("There's been some error and I can't find this guild "
+                                                           "anymore. Maybe they've kicked me or the guild has been "
+                                                           "deleted. Please contact Ryan")
+            return
+
+        # Check if a user has been blocked by the guild
+        blocked_users_dict = self.bot.db.get('blocked_users', {})
+        if button_interaction.user.id in blocked_users_dict.get(guild.id, []):
+            await button_interaction.response.send_message("This guild's appeals room has been temporarily closed "
+                                                           "down. Please try again later.", ephemeral=True)
+            return
+
         if guild_id not in self.bot.db['guilds']:
             await button_interaction.response.send_message("The server has not properly setup their modbot room. The "
                                                            "moderators should type `_setup` in some channel on their "

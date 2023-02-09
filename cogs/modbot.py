@@ -89,7 +89,10 @@ class Modbot(commands.Cog):
         """PM Bot"""
         # This function will handle new users who are not in a report room and trying to start a new report
         if isinstance(msg.channel, discord.DMChannel):  # in a PM
-            if await self.receive_new_users(msg):
+            if result := await self.receive_new_users(msg):
+                if result == "BLOCKED_USER":
+                    await msg.reply("There has been some kind of error in joining that server's report room. Please "
+                                    "contact the mods directly.")
                 return  # True if a new user came into the report room
 
         # sending a message during a report
@@ -134,6 +137,11 @@ class Modbot(commands.Cog):
             # they've selected a server to make a report to, put them in that server's report room
             try:
                 if guild:
+                    # check if they have been blocked by the /block command
+                    if main_or_secondary == "BLOCKED_USER":
+                        return "BLOCKED_USER"
+
+                    # assuming they haven't been blocked, continue here
                     await self.start_report_room(msg.author, guild, msg,
                                                  main_or_secondary, ban_appeal=False)  # bring user to report room
                 return True  # if it worked
@@ -268,6 +276,14 @@ class Modbot(commands.Cog):
 
         if guild.id not in self.bot.db['guilds']:
             return None, None
+
+        # the output point of this function will check if main_or_secondary equals "BLOCKED_USER"
+        # if so, it'll propagate that error upwards so a report doesn't get started
+        # it is checking if a server has blocked this user
+        if guild:
+            blocked_users_dict = self.bot.db.get('blocked_users', {})
+            if msg.author.id in blocked_users_dict.get(guild.id, []):
+                return guild, "BLOCKED_USER"
 
         guild, main_or_secondary = await self.confirm_guild(msg.author, guild)
         return guild, main_or_secondary

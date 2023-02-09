@@ -200,6 +200,43 @@ class Admin(commands.Cog):
 
         await interaction.response.send_message("I've created the message", ephemeral=True)
 
+    @app_commands.command()
+    @app_commands.default_permissions()
+    @app_commands.describe(member="A member in this server to block")
+    @app_commands.describe(member_id="The member ID of any user, even not in this server")
+    async def block(self, interaction: discord.Interaction, member: discord.Member = None, member_id: str = None):
+        """Blocks a user from entering the modbot (choose only one argument option)"""
+        if not member and not member_id:
+            await interaction.response.send_message("Please specify either a member or a member_id!",
+                                                    ephemeral=True)
+            return
+
+        if member and member_id:
+            await interaction.response.send_message("Please specify only ONE of the two member/member_id options!",
+                                                    ephemeral=True)
+            return
+
+        if member_id:
+            try:
+                member = await self.bot.fetch_user(int(member_id))
+            except ValueError:
+                await interaction.response.send_message("Please specify a numerical user ID as the member_id option",
+                                                        ephemeral=True)
+            except (discord.HTTPException, discord.NotFound) as e:
+                await interaction.response.send_message(f"Error: `{e}`\nI couldn't find the user you specified, "
+                                                        f"please check the ID you inputted.", ephemeral=True)
+
+        assert member is not None
+
+        blocked_users_list: list[int] = self.bot.db.setdefault('blocked_users', {}).setdefault(interaction.guild.id, [])
+
+        if member.id in blocked_users_list:
+            blocked_users_list.remove(member.id)
+            await interaction.response.send_message(f"I've unblocked the user {member.mention} ({str(member)})")
+        else:
+            blocked_users_list.append(member.id)
+            await interaction.response.send_message(f"I've blocked the user {member.mention} ({str(member)})")
+
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
