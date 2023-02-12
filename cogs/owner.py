@@ -193,6 +193,9 @@ class Owner(commands.Cog):
                 guild_object = discord.Object(id=guild_id)
                 await self.bot.tree.sync(guild=guild_object)
 
+        # global commands
+        await self.bot.tree.sync()
+
         try:
             await ctx.message.add_reaction("♻")
         except (discord.HTTPException, discord.Forbidden, discord.NotFound):

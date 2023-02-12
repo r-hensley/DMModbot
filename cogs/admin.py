@@ -11,19 +11,20 @@ from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-INSTRUCTIONS = """・`end` or `done` - Finish the current report.
-・`_setup` - Setup the main report room (or to reset it completely if there's a bug).
-・`_setup secondary` - Setup or reset a secondary report room for general questions about the server. If not  
-　setup, those questions will still come to this channel. Consider creating this room for a larger group of server 
-　helpers to answer questions that don't need to be answered by the main team of mods on the server.
-・`_clear` - Clear the waiting list
-・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you want a user to come 
-　to the report room or send an official mod message to a channel.
-・`_not_anonymous` - Type this during a report session to reveal moderator names for future messages. You can 
-　enter it again to return to anonymity at any time during the session, and it'll be automatically reset to default   
-　anonymity after the session ends.
-・`/block` - Block or unblock a user from entering the report room / making a ban appeal.
-"""
+INSTRUCTIONS = ["・`end` or `done` - Finish the current report.",
+                "・`_setup` - Setup the main report room (or to reset it completely if there's a bug).",
+                "・`_setup secondary` - Setup or reset a secondary report room for general questions about the server. "
+                "If not setup, those questions will still come to this channel. Consider creating this room for a "
+                "larger group of server helpers to answer questions that don't need to be answered by the main team "
+                "of mods on the server.",
+                "・`_clear` - Clear the waiting list",
+                "・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you "
+                "want a user to come to the report room or send an official mod message to a channel.",
+                "・`_not_anonymous` - Type this during a report session to reveal moderator names for future "
+                "messages. You can enter it again to return to anonymity at any time during the session, "
+                "and it'll be automatically  reset to default anonymity after the session ends.",
+                "・`/block` - Block or unblock a user from entering the report room / making a ban appeal."]
+INSTRUCTIONS = '\n'.join(INSTRUCTIONS)
 
 SP_SERV_ID = 243838819743432704
 RY_TEST_SERV_ID = 275146036178059265
@@ -187,7 +188,7 @@ class Admin(commands.Cog):
             except discord.Forbidden:
                 await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
             await button_interaction.response.send_message(f"Check your private messages from me → \n"
-                                                           f"{button_interaction.user.dm_channel.jump_url}/{'9'*19}",
+                                                           f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}",
                                                            ephemeral=True)
             guild, main_or_secondary = await cog.confirm_guild(button_interaction.user, button_interaction.guild)
             await cog.start_report_room(button_interaction.user, guild, msg=None,
@@ -238,6 +239,19 @@ class Admin(commands.Cog):
         else:
             blocked_users_list.append(member.id)
             await interaction.response.send_message(f"I've blocked the user {member.mention} ({str(member)})")
+
+    @app_commands.command()
+    @app_commands.default_permissions()
+    async def post_instructions(self, interaction: discord.Interaction):
+        """Posts instructions for modbot to be pinned in the current channel"""
+        try:
+            await interaction.channel.send(INSTRUCTIONS)
+        except (discord.Forbidden, discord.HTTPException) as e:
+            await interaction.response.send_message(f"I was unable to post the instructions here:\nError: `{e}`\n"
+                                                    f"Please fix my permissions or try again.")
+            return
+
+        await interaction.response.send_message("I've posted the instructions! Consider pinning them in this channel.")
 
 
 async def setup(bot):
