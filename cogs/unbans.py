@@ -159,6 +159,17 @@ class Unbans(commands.Cog):
                                                            "deleted. Please contact Ryan")
             return
 
+        # Check if the user already is in a report / appeal somewhere
+        if button_interaction.user.id in self.bot.db['reports']:
+            dm_channel = button_interaction.user.dm_channel
+            dm_channel_link = ''
+            if dm_channel:
+                dm_channel_link = f":\n{dm_channel.jump_url}"
+            await button_interaction.response.send_message("You are already in a report or ban appeal somewhere, "
+                                                           f"please check your DMs with me{dm_channel_link}",
+                                                           ephemeral=True)
+            return
+
         # Check if a user has been blocked by the guild
         blocked_users_dict = self.bot.db.get('blocked_users', {})
         if button_interaction.user.id in blocked_users_dict.get(guild.id, []):
@@ -172,6 +183,16 @@ class Unbans(commands.Cog):
                                                            "main server.")
             return
 
+        dm_channel = button_interaction.user.dm_channel
+        if not dm_channel:
+            try:
+                await button_interaction.user.create_dm()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+        dm_channel_link = ''
+        if dm_channel:
+            dm_channel_link = f":\n{dm_channel.jump_url}"
+
         self.bot.db['user_localizations'][button_interaction.user.id] = str(locale)
         if str(locale).startswith('es'):
             response_text = f"Esto iniciará una apelación de baneo con {guild.name}. " \
@@ -179,19 +200,19 @@ class Unbans(commands.Cog):
             confirmation_text = "Iniciar un apelación de expulsión"
             cancelation_text = "Cancelar"
             cancelation_confirmation = "Cancelado"
-            final_text = f"Por favor, lea el mensaje privado de {self.bot.user.mention}."
+            final_text = f"Por favor, lea el mensaje privado de {self.bot.user.mention}{dm_channel_link}."
         elif str(locale).startswith("ja"):
             response_text = f"これにより{guild.name}でバンの解除申請が開始されます。よろしいですか。"
             confirmation_text = "バンの解除申請を開始します"
             cancelation_text = "キャンセル"
             cancelation_confirmation = "中止しました。"
-            final_text = f"{self.bot.user.mention}からのメッセージをご確認ください。"
+            final_text = f"{self.bot.user.mention}からのメッセージをご確認ください{dm_channel_link}。"
         else:
             response_text = f"This will start a ban appeal with {guild.name}. Are you sure you wish to continue?"
             confirmation_text = "Start a ban appeal"
             cancelation_text = "Cancel"
             cancelation_confirmation = "Canceled"
-            final_text = f"Please read the private message from {self.bot.user.mention}"
+            final_text = f"Please read the private message from {self.bot.user.mention}{dm_channel_link}"
 
         confirmation_button = discord.ui.Button(label=confirmation_text)
         cancellation_button = discord.ui.Button(label=cancelation_text)
