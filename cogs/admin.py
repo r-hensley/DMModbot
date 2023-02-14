@@ -45,6 +45,13 @@ def is_admin(ctx):
     mod_role = ctx.guild.get_role(guild_config['mod_role'])
     if mod_role is None:
         return False
+
+    # special hardcode for ccm role on spanish server
+    sp_serv_ccm_role = ctx.guild.get_role(1049433426001920000)  # community content manager role
+    if sp_serv_ccm_role in ctx.author.roles:
+        return True
+
+    # otherwise just check normal mod role
     return mod_role in ctx.author.roles
 
 
