@@ -424,7 +424,7 @@ class Modbot(commands.Cog):
             getting_started = guild.get_channel(243838819743432704)
             member = guild.get_member(author.id)
             found_role = False  # will be True if the user has one of the roles in native_language_roles
-            for role_id in [996468349364092969, 243853718758359040, 243854128424550401, 247020385730691073]:
+            for role_id in [243853718758359040, 243854128424550401, 247020385730691073]:
                 role = guild.get_role(role_id)
                 if role in member.roles:
                     found_role = True
