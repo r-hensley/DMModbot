@@ -621,6 +621,18 @@ class Modbot(commands.Cog):
             if msg.content.casefold() in ['end', 'done']:
                 await self.close_room(open_report, False)
                 return
+            if msg.content.casefold() in ['finish']:
+                await self.close_room(open_report, False)
+                try:
+                    parent_message = await msg.channel.parent.fetch_message(msg.channel.id)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+                else:
+                    try:
+                        await parent_message.add_reaction("✅")
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                return
             if isinstance(open_report.dest, discord.DMChannel):
                 cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}"
                 if thread_info.setdefault('not_anonymous', False):
