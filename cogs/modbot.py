@@ -590,22 +590,26 @@ class Modbot(commands.Cog):
 
     """Send message"""
 
-    async def send_message(self,
-                           msg: discord.Message,
-                           open_report: OpenReport):
+    async def send_message(self, msg: discord.Message, open_report: OpenReport):
+        # ignore messages starting with _ or other bot prefixes
         if msg.content:
-            for prefix in EXEMPTED_BOT_PREFIXES:
-                # messages starting with _ or other bot prefixes
-                if msg.content.startswith(prefix):
-                    try:
-                        await msg.add_reaction('🔇')
-                    except discord.NotFound:
-                        pass
-                    return
+            if not isinstance(msg.channel, discord.DMChannel):
+                for prefix in EXEMPTED_BOT_PREFIXES:
+                    if msg.content.startswith(prefix):
+                        try:
+                            await msg.add_reaction('🔇')
+                        except discord.NotFound:
+                            pass
+                        return
+
+        # ignore messages from bots
         if msg.author.bot:
+            # don't attach 🔇 to the messages delivered by Modbot to the report room from the user
             if msg.author == msg.guild.me:
                 if msg.content.startswith('>>> '):
                     return
+
+            # for all other bot messages, attach 🔇
             await msg.add_reaction('🔇')
             return
 
