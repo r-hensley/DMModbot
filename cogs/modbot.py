@@ -484,7 +484,7 @@ class Modbot(commands.Cog):
                 **Report starts here
                 __{' ' * 70}__**
                 \n\n
-                """  # invisible character at end of this line to avoid whitespace trimming
+                """  # invisible character needed at end of this line to avoid whitespace trimming, added below
 
                 thread_text = dedent(thread_text) + invisible_character  # invis. character breaks dedent
                 entry_message: discord.Message = await report_channel.send(entry_text)
@@ -536,20 +536,20 @@ class Modbot(commands.Cog):
                     desc = "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。" \
                            "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
                            "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                           "通報内容の入力が終了したら、`end`または`done`とタイプしてください。"
+                           "管理者への通報が終了したら、`end`または`close`とタイプしてください。"
                 elif locale.startswith("es"):
                     desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer " \
                            "mensaje. Los moderadores verán los mensajes o imágenes que " \
                            "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
                            "Los moderadores pueden tardar un poco en ver tu reporte, " \
                            "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
-                           "con los moderadores, escribe `end` o `done` y el chat se cerrará."
+                           "con los moderadores, escribe `end` o `close` y el chat se cerrará."
                 else:
                     desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
                            "The moderators will see any messages " \
                            "or images you send, and you'll receive messages and images from the mods too." \
                            "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                           "When you are done talking to the mods, please type `end` or `done`, and then " \
+                           "When you are done talking to the mods, please type `end` or `close`, and then " \
                            "the chat will close."
 
                 await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
@@ -559,7 +559,7 @@ class Modbot(commands.Cog):
                     appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
                              "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
                              "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                             "申請内容の入力が終了したら、`end`または`done`とタイプしてください。"
+                             "申請が終了したら、`end`または`close`とタイプしてください。"
                 elif locale.startswith("es"):
                     appeal = "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás " \
                              "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que " \
@@ -567,13 +567,13 @@ class Modbot(commands.Cog):
                              "Los moderadores pueden tardar " \
                              "un poco en ver tu apelación, así que ten paciencia. " \
                              "\n\nCuando hayas terminado de hablar " \
-                             "con los moderadores, escribe `end` o `done` y el chat se cerrará."
+                             "con los moderadores, escribe `end` o `close` y el chat se cerrará."
                 else:
                     appeal = "You are now connected to the moderators of the server, and I've notified them that " \
                              "you're trying to appeal a ban. The moderators will see any messages " \
                              "or images you send, and you'll receive messages and images from the mods too." \
                              "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                             "When you are done talking to the mods, please type `end` or `done`, and then " \
+                             "When you are done talking to the mods, please type `end` or `close`, and then " \
                              "the chat will close."
 
                 await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
@@ -621,7 +621,13 @@ class Modbot(commands.Cog):
                 thread_info['mods'].append(msg.author.id)
 
         if msg.content:
-            if msg.content.casefold() in ['end', 'done']:
+            if msg.content.casefold() == 'done':
+                await msg.add_reaction('🔇')
+                await msg.reply("This used to be a command to close the room, but it has been changed to `close` "
+                                "instead of `done` to avoid accidental closure of rooms by people trying to actually "
+                                "send the word `done` to the reporter. For now, I've disabled the use of the word.")
+                return
+            if msg.content.casefold() in ['end', 'close']:
                 await self.close_room(open_report, False)
                 return
             if msg.content.casefold() in ['finish']:
