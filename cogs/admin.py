@@ -11,7 +11,8 @@ from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-INSTRUCTIONS = ["・`end` or `done` - Finish the current report.",
+INSTRUCTIONS = ["・`end` or `close` - Finish the current report.",
+                "・`finish` - Finish the report and add a ✅ emoji to the thread marking it as resolved.",
                 "・`_setup` - Setup the main report room (or to reset it completely if there's a bug).",
                 "・`_setup secondary` - Setup or reset a secondary report room for general questions about the server. "
                 "If not setup, those questions will still come to this channel. Consider creating this room for a "

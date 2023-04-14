@@ -469,7 +469,10 @@ class Modbot(commands.Cog):
                 channel. 
                    - Any messages you type will be sent
                       to the user. 
-                   - To end this chat, type `end` or `done`.
+                   - To end this chat, type `end` or `close`.
+                   - Typing `finish` will close the chat and 
+                      also add a ✅ emoji to the thread, marking 
+                      it as "Resolved".
                    - To *not* send a certain message, start the 
                       message with `_`. 
                    - For example, `Hello` would be sent, but 
