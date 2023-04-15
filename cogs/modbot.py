@@ -471,7 +471,7 @@ class Modbot(commands.Cog):
                       to the user. 
                    \- To end this chat, type `end` or `close`.
                    \- Typing `finish` will close the chat and 
-                      also add a \✅ emoji to the thread, marking 
+                      also add a ✅ emoji to the thread, marking 
                       it as "Resolved".
                    \- To *not* send a certain message, start the 
                       message with `_`. 
