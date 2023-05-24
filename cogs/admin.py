@@ -35,17 +35,26 @@ def is_admin(ctx):
     """Checks if you are an admin in the guild you're running a command in"""
     if not ctx.guild:
         return False
+
     if ctx.channel.permissions_for(ctx.author).administrator:
         return True
+
     guilds = ctx.bot.db['guilds']
     if ctx.guild.id not in guilds:
         return False
+
     guild_config = guilds[ctx.guild.id]
     if 'mod_role' not in guild_config or guild_config['mod_role'] is None:
         return False
+
     mod_role = ctx.guild.get_role(guild_config['mod_role'])
     if mod_role is None:
         return False
+
+    # # allow use of _send command in staff categories in spanish server
+    # if ctx.command.name == "send":
+    #     if ctx.channel.category.id in [817780000807583774, 1082581865065631754]:
+    #         return True
 
     # special hardcode for ccm role on spanish server
     sp_serv_ccm_role = ctx.guild.get_role(1049433426001920000)  # community content manager role
