@@ -15,7 +15,6 @@ from .utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-
 # database structure
 # {
 #     "prefix": {},
@@ -450,7 +449,6 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
                 entry_text = f"The user {author.mention} has entered the report room. " \
                              f"Reply in the thread to continue. (@here)"
 
@@ -480,18 +478,39 @@ class Modbot(commands.Cog):
                       commands would not be sent.
                       Currently exempted bot prefixes:
                       `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
-                
-                **Report starts here
-                __{' ' * 70}__**
-                \n\n
-                """  # invisible character needed at end of this line to avoid whitespace trimming, added below
+                """
+                # invisible character needed at end of this line to avoid whitespace trimming, added below
 
-                thread_text = dedent(thread_text) + invisible_character  # invis. character breaks dedent
+                thread_text = dedent(thread_text)
                 entry_message: discord.Message = await report_channel.send(entry_text)
                 report_thread = await entry_message.create_thread(
                     name=f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}',
                     auto_archive_duration=1440)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
+
+                rai = entry_message.guild.get_member(270366726737231884)
+                if rai in entry_message.guild.members:
+                    # try to capture the modlog that will be posted by Rai, and repost it yourself
+                    try:
+                        rai_msg = await self.bot.wait_for("message", timeout=5.0,
+                                                          check=lambda m: m.channel == report_thread and
+                                                          m.author.id == rai.id and m.embeds)
+                    except asyncio.TimeoutError:
+                        pass
+                    else:
+                        # delete the captured modlog
+                        try:
+                            await rai_msg.delete()
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
+
+                        # repost it
+                        else:
+                            await report_thread.send(embed=rai_msg.embeds[0])
+
+                invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
+                vertical_space = f"**Report starts here\n__{' ' * 70}__**\n\n\n{invisible_character}"
+                await report_thread.send(vertical_space)
 
                 # Add reaction signifying open room, will remove in close_room() function
                 try:
@@ -795,7 +814,6 @@ class Modbot(commands.Cog):
                 return time_remaining
 
         return 0
-
 
 
 async def setup(bot):
