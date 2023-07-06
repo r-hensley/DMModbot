@@ -506,7 +506,7 @@ class Modbot(commands.Cog):
 
                         # repost it
                         else:
-                            await report_thread.send(embed=rai_msg.embeds[0])
+                            await report_thread.send(rai_msg.content, embed=rai_msg.embeds[0])
 
                 invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
                 vertical_space = f"**Report starts here\n__{' ' * 70}__**\n\n\n{invisible_character}"
