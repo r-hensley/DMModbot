@@ -204,10 +204,23 @@ class Admin(commands.Cog):
                 await button_interaction.user.create_dm()
             except discord.Forbidden:
                 await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
-            await button_interaction.response.send_message(f"Check your private messages from me → \n"
-                                                           f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}",
+
+            # create a link to bring user to their own DM, it will look like this
+            # https://discord.com/channels/@me/713269937556291696/9999999999999999999
+            # the '9' * 19 at the end refers to a message ID. Choosing 9999... will bring user to the bottom of the chat
+            dm_url_link = f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}"
+            await button_interaction.response.send_message(f"Check your private messages from me → {dm_url_link}",
                                                            ephemeral=True)
-            guild, main_or_secondary = await cog.confirm_guild(button_interaction.user, button_interaction.guild)
+
+            try:
+                guild, main_or_secondary = await cog.confirm_guild(button_interaction.user, button_interaction.guild)
+            except discord.Forbidden:
+                await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
+                                                       "privacy settings."
+                                                       " Please enable messages from users from this server.",
+                                                       ephemeral=True)
+                return
+
             await cog.start_report_room(button_interaction.user, guild, msg=None,
                                         main_or_secondary=main_or_secondary, ban_appeal=False)
 
