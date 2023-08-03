@@ -221,8 +221,9 @@ class Admin(commands.Cog):
                                                        ephemeral=True)
                 return
 
-            await cog.start_report_room(button_interaction.user, guild, msg=None,
-                                        main_or_secondary=main_or_secondary, ban_appeal=False)
+            if guild:
+                await cog.start_report_room(button_interaction.user, guild, msg=None,
+                                            main_or_secondary=main_or_secondary, ban_appeal=False)
 
         button.callback = button_callback
         view = hf.RaiView(timeout=None)
