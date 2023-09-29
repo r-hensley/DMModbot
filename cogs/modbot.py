@@ -657,7 +657,7 @@ class Modbot(commands.Cog):
                 await self.close_room(open_report, False)
                 try:
                     parent_message = await msg.channel.parent.fetch_message(msg.channel.id)
-                except (discord.NotFound, discord.HTTPException):
+                except (discord.NotFound, discord.HTTPException, AttributeError):
                     pass
                 else:
                     try:
