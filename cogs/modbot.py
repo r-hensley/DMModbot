@@ -328,9 +328,12 @@ class Modbot(commands.Cog):
             locale = button_interaction.locale
             self.bot.db['user_localizations'][author.id] = str(locale)
             await q_msg.delete()
-            first_msg_conf = {"en": "I've sent your first message",
-                              "es": "He enviado tu primer mensaje",
-                              "ja": "あなたの最初のメッセージを送信しました。"}
+            first_msg_conf = {"en": "I will send your first message. "
+                                    "Make sure all the messages you send receive a '📨' reaction.",
+                              "es": "Enviaré tu primer mensaje. "
+                                    "Asegúrate de que todos los mensajes que envíes reciban una reacción '📨'.",
+                              "ja": "あなたの最初のメッセージを送信しました。"
+                                    "送信するすべてのメッセージが '📨' のリアクションが付くことを確認してください。"}
             conf_txt = first_msg_conf.get(str(locale)[:2], first_msg_conf['en'])
             await button_interaction.response.send_message(conf_txt, ephemeral=True)
 
@@ -566,7 +569,7 @@ class Modbot(commands.Cog):
                 else:
                     desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
                            "The moderators will see any messages " \
-                           "or images you send, and you'll receive messages and images from the mods too." \
+                           "or images you send, and you'll receive messages and images from the mods too. " \
                            "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
                            "When you are done talking to the mods, please type `end` or `close`, and then " \
                            "the chat will close."
@@ -590,7 +593,7 @@ class Modbot(commands.Cog):
                 else:
                     appeal = "You are now connected to the moderators of the server, and I've notified them that " \
                              "you're trying to appeal a ban. The moderators will see any messages " \
-                             "or images you send, and you'll receive messages and images from the mods too." \
+                             "or images you send, and you'll receive messages and images from the mods too. " \
                              "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
                              "When you are done talking to the mods, please type `end` or `close`, and then " \
                              "the chat will close."
