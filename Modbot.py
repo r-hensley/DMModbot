@@ -91,17 +91,19 @@ class Modbot(Bot):
         await self.log_channel.send('Bot loaded')
         await self.change_presence(activity=discord.Game('DM me to talk to mods'))
 
-        self.recently_in_report_room = {}
-        for thread_info in self.db['reports'].values():
-            report_channel = self.get_channel(thread_info['thread_id'])
-            if report_channel:
-                await report_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. If the "
-                                          "user continues messaging they should be able to come right back in.")
-            user = self.get_user(thread_info["user_id"])
-            if user and user.dm_channel:
-                await user.dm_channel.send(
-                    "NOTIFICATION: Sorry, I had to restart, so I cleared this room. Please try again.")
-        self.db['reports'] = {}
+        if not hasattr(self, "recently_in_report_room"):
+            self.recently_in_report_room = {}
+        # for thread_info in self.db['reports'].values():
+        #     report_channel = self.get_channel(thread_info['thread_id'])
+        #     if report_channel:
+        #         await report_channel.send("NOTIFICATION: Sorry, I had to restart, so I cleared this room. If the "
+        #                                   "user continues messaging they should be able to come right back in.")
+        #     user = self.get_user(thread_info["user_id"])
+        #     if user and user.dm_channel:
+        #         await user.dm_channel.send(
+        #             "NOTIFICATION: Sorry, I had to restart, so I cleared this room. Please try again.")
+        if 'reports' not in self.db:
+            self.db['reports'] = {}
 
     async def on_error(self, event, *args, **kwargs):
         e = discord.Embed(title='Event Error', colour=0xa32952)

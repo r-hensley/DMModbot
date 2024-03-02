@@ -71,7 +71,8 @@ class Modbot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
         # dict w/ key ID and value of last left report room time
-        self.recently_in_report_room = {}
+        if not hasattr(self, "recently_in_report_room"):
+            self.recently_in_report_room = {}
 
     def get_user_locale(self, user_id: int) -> str:
         return self.bot.db.get('user_localizations', {}).get(user_id, 'en')[:2]
