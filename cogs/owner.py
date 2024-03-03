@@ -47,10 +47,14 @@ class Owner(commands.Cog):
     @commands.command()
     async def db(self, ctx):
         """Shows me my DB"""
-        t = f"prefix: {self.bot.db['prefix']}\n" \
-            f"settingup: {self.bot.db['settingup']}\nreports: {self.bot.db['reports']}\n"
+        t = f"__prefix__: ``{self.bot.db['prefix']}``\n" \
+            f"__settingup__: ``{self.bot.db['settingup']}``\n" + \
+            f"__reports__: ```{self.bot.db['reports']}```\n".replace("}, ", "},\n") + \
+            f"__guilds__:\n"
+        guild_text = ""
         for guild in self.bot.db['guilds']:
-            t += f"{guild}: {self.bot.db['guilds'][guild]}\n"
+            guild_text += f"{guild}: {self.bot.db['guilds'][guild]}\n"
+        t += f"```{guild_text}```"
         await ctx.send(t)
 
     @commands.command()
