@@ -185,10 +185,45 @@ class Modbot(commands.Cog):
                     return None  # can't create a DM with user
 
             report_thread: discord.Thread = self.bot.get_channel(thread_info['thread_id'])
+
+            # just delete the entry out of bot.db['reports']
+            if not report_thread:
+                del self.bot.db['reports'][msg.author.id]
+                return None
+
+            # if I want code that tries to unarchive the thread, I can use this
+            #     # first, try to find the thread in the main report room
+            #     report_room_id = self.bot.db['guilds'][thread_info['guild_id']]['channel']
+            #     report_room = self.bot.get_channel(report_room_id)
+            #     async for t in report_room.archived_threads():
+            #         if t.id == thread_info['thread_id']:
+            #             report_thread = t
+            #             break
+            #
+            #     # if not found in main report room, try to find it in the secondary report room
+            #     if not report_thread:
+            #         if self.bot.db['guilds'][msg.guild.id]['secondary_channel']:
+            #             report_room_id = self.bot.db['guilds'][thread_info['guild_id']]['secondary_channel']
+            #             report_room = self.bot.get_channel(report_room_id)
+            #             async for t in report_room.archived_threads():
+            #                 if t.id == thread_info['thread_id']:
+            #                     report_thread = t
+            #                     break
+            #
+            #     # if still not found, return None
+            #     if not report_thread:
+            #         return None  # can't find the thread
+            #
+            # # if the thread is found, unarchive it if it's archived
+            # if report_thread.archived:
+            #     try:
+            #         await report_thread.edit(archived=False)
+            #     except (discord.Forbidden, discord.HTTPException):
+            #         return None  # can't unarchive the thread
+
             current_user = msg.author
             return OpenReport(thread_info, current_user, report_thread, source, report_thread)
 
-    #
     # for first entering a user into the report room
     async def server_select(self, msg: discord.Message) -> Union[tuple[None, None], tuple[discord.Guild, str]]:
         """From the entry message into the DMs by a user, ask them which server they want to connect to, and return
