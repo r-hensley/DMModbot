@@ -33,7 +33,7 @@ RY_TEST_SERV_ID = 275146036178059265
 
 class Owner(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: commands.Bot = bot
         
         # For use in eval command
         self._last_result = None
@@ -219,6 +219,82 @@ class Owner(commands.Cog):
         except (discord.HTTPException, discord.Forbidden, discord.NotFound):
             await ctx.send(f"**`interactions: commands synced`**", delete_after=5.0)
 
+    @commands.command()
+    async def change_to_forum(self, ctx: commands.Context, channel_before_id: int, channel_after_id: int):
+        channel_before = self.bot.get_channel(channel_before_id)
+        channel_after = self.bot.get_channel(channel_after_id)
+        perms_before = channel_before.permissions_for(ctx.guild.me)
+        perms_after = channel_after.permissions_for(ctx.guild.me)
+        await ctx.send(f"Will change {channel_before.mention} to {channel_after.mention}")
+        # "before" channel is a TextChannel with threads. Bot should have the ability to close threads
+        # "after" channel is a ForumChannel. Bot should have the ability to create threads
+        if not perms_before.manage_threads:
+            await ctx.send(f"Bot doesn't have the permission to manage threads in {channel_before.mention}")
+            return
+        if not perms_after.create_public_threads:
+            await ctx.send(f"Bot doesn't have the permission to create threads in {channel_after.mention}")
+            return
+
+        if ctx.guild.id != channel_before.guild.id != channel_after.guild.id:
+            return
+
+        for user_id in self.bot.db['reports']:
+            report = self.bot.db['reports'][user_id]
+            # skip if report['guild_id'] != ctx.guild.id, and then check if report['thread_id'] is in channel_before
+            if report['guild_id'] != ctx.guild.id:
+                continue
+            if report['thread_id'] not in [t.id for t in channel_before.threads]:
+                continue
+            await ctx.send(f"Moving thread {report['thread_id']} to {channel_after.mention}")
+            # open a post in the new forum channel with the same title and content as the thread
+            thread = channel_before.get_thread(report['thread_id'])
+            starter_message = await channel_before.fetch_message(report['thread_id'])
+            post = (await channel_after.create_thread(name=thread.name, content=starter_message.content)).thread
+            # update the report with the new thread id
+            report['thread_id'] = post.id
+            # post a message in the new post informing the mods that the thread has been moved with link to old thread
+            await post.send(f"Thread moved from {thread.mention} to {post.mention}.")
+            await thread.send(f"Thread moved to {post.mention}. This thread is no longer active.")
+            await ctx.send(f"Thread {report['thread_id']} moved to {channel_after.mention}")
+            # close the old thread
+            await thread.edit(archived=True)
+        # update self.bot.db['guilds']['channel'] with the new channel id
+        self.bot.db['guilds'][ctx.guild.id]['channel'] = channel_after_id
+        await ctx.send(f"Updated channel for {ctx.guild.name} to {channel_after.mention}")
+
+    @commands.command()
+    async def setup_forum(self, ctx: commands.Context, forum_channel_id: int):
+        """This command will:
+        1) Create post called 'Meta Discussion' in the forum channel, pin it, and add the ID to
+        bot.db['guilds']['meta_channel']
+        2) Create tags: Complete (✅), Open (❗), Closed (Not Resolved) (⏹️), and Ban Appeal (🚷)"""
+        forum_channel = self.bot.get_channel(forum_channel_id)
+        perms = forum_channel.permissions_for(ctx.guild.me)
+        if not perms.create_public_threads:
+            await ctx.send(f"Bot doesn't have the permission to create threads in {forum_channel.mention}")
+            return
+        if not perms.manage_channels:
+            await ctx.send(f"Bot doesn't have the permission to manage channels in {forum_channel.mention}")
+            return
+        if not perms.manage_threads:
+            await ctx.send(f"Bot doesn't have the permission to manage threads in {forum_channel.mention}")
+            return
+        # create the meta discussion post
+        txt = "This is the meta discussion post for the forum. Please use this post to discuss anything related to " \
+              "the forum."
+        meta_post = (await forum_channel.create_thread(name='Meta Discussion', content=txt)).thread
+        await meta_post.edit(pinned=True)
+        # create the tags
+        tags = ['Complete', 'Open', 'Closed (Unresolved)', 'Ban Appeal']
+        emoji = ['✅', '❗', '⏹️', '🚷']
+        for tag in tags:
+            await forum_channel.create_tag(name=tag, emoji=emoji[tags.index(tag)])
+        # update bot.db['guilds']['meta_channel'] with the new channel id
+        self.bot.db['guilds'][ctx.guild.id]['channel'] = forum_channel_id
+        self.bot.db['guilds'][ctx.guild.id]['meta_channel'] = meta_post.id
+        # self.bot.db['guilds'][ctx.guild.id]['secondary_channel'] = forum_channel_id
+        # self.bot.db['guilds'][ctx.guild.id]['secondary_meta_channel'] = meta_post.id
+        await ctx.send(f"Setup forum channel {forum_channel.mention} for {ctx.guild.name}")
 
 async def dump_json(ctx):
     db_copy = deepcopy(ctx.bot.db)

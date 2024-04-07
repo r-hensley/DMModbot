@@ -450,6 +450,7 @@ class Modbot(commands.Cog):
         guild_config = self.bot.db['guilds'][guild.id]
         if main_or_secondary == 'main':
             target_id = guild_config['channel']
+
         else:  # main_or_secondary == 'secondary'
             target_id = guild_config.get('secondary_channel', guild_config.get('channel'))
 
@@ -457,6 +458,8 @@ class Modbot(commands.Cog):
         if isinstance(report_channel, discord.ForumChannel):
             # a pinned post in forum where I can send info messages
             meta_channel_id = self.bot.db['guilds'][guild.id].get('meta_channel')
+            if main_or_secondary == 'secondary':
+                meta_channel_id = self.bot.db['guilds'][guild.id].get('secondary_meta_channel')
             if not meta_channel_id:
                 await author.send("The report room for this server is not properly setup. Please directly message "
                                   "the mods. (I can't find the ID for the channel to send info messages in)")
@@ -571,15 +574,15 @@ class Modbot(commands.Cog):
                 thread_text = dedent(thread_text)
                 if isinstance(report_channel, discord.ForumChannel):
                     tags = []
-                    if ban_appeal:
-                        # find tag in channel.available_tags that has "Ban Appeal" in the name
-                        for t in report_channel.available_tags:
-                            # ban appeal tag: if 🚷 is the emoji (:no_pedestrians:)
-                            if str(t.emoji) == "🚷":
+                    # find tag in channel.available_tags that has "Ban Appeal" in the name
+                    for t in report_channel.available_tags:
+                        # ban appeal tag: if 🚷 is the emoji (:no_pedestrians:)
+                        if str(t.emoji) == "🚷":
+                            if ban_appeal:
                                 tags.append(t)
-                            # "open" report tag: if ❗ is the emoji
-                            if str(t.emoji) == "❗":
-                                tags.append(t)
+                        # "open" report tag: if ❗ is the emoji
+                        if str(t.emoji) == "❗":
+                            tags.append(t)
 
                     report_thread = (await report_channel.create_thread(name=thread_name, content=entry_text,
                                                                         applied_tags=tags)).thread
@@ -620,7 +623,8 @@ class Modbot(commands.Cog):
                             await entry_message.add_reaction("❗")
                     elif isinstance(report_channel, discord.ForumChannel):
                         # add the "open" tag to the thread (❗)
-                        await hf.edit_thread_tags(report_thread, add=["❗"])
+                        # await hf.edit_thread_tags(report_thread, add=["❗"])
+                        pass
                 except discord.Forbidden:
                     pass
 
