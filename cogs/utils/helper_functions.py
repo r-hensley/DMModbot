@@ -92,6 +92,8 @@ async def edit_thread_tags(thread: discord.Thread, add: list[str] = None, remove
 
     for to_add_tag in add:
         for tag in available_tags:
+            if tag in thread_tags:
+                continue
             if str(tag.emoji) == to_add_tag:
                 thread_tags.append(tag)
                 break
