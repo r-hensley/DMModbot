@@ -55,7 +55,13 @@ class Owner(commands.Cog):
         for guild in self.bot.db['guilds']:
             guild_text += f"{guild}: {self.bot.db['guilds'][guild]}\n"
         t += f"```{guild_text}```"
-        await ctx.send(t)
+        if len(t) > 4000:
+            t_part_1 = t[:1997] + '```'
+            t_part_2 = '```' + t[1997:3991] + '```'
+            await ctx.send(t_part_1)
+            await ctx.send(t_part_2)
+        else:
+            await ctx.send(t)
 
     @commands.command()
     async def sendtoall(self, ctx, *, msg):
@@ -74,10 +80,10 @@ class Owner(commands.Cog):
 
     @commands.command(hidden=True)
     async def reload(self, ctx, *, cogs: str):
-        try:
-            await ctx.message.delete()
-        except discord.Forbidden:
-            pass
+        # try:
+        #     await ctx.message.delete()
+        # except discord.Forbidden:
+        #     pass
         for cog in cogs.split():
             if cog in ['hf', 'helper_function']:
                 try:
@@ -87,7 +93,11 @@ class Owner(commands.Cog):
                 except Exception as e:
                     await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
                 else:
-                    await ctx.send(f'**`{cog}: SUCCESS`**', delete_after=5.0)
+                    # await ctx.send(f'**`{cog}: SUCCESS`**', delete_after=5.0)
+                    try:
+                        await ctx.message.add_reaction('✅')
+                    except [discord.Forbidden, discord.HTTPException]:
+                        pass
 
             else:
                 try:
@@ -98,7 +108,11 @@ class Owner(commands.Cog):
                 except Exception as e:
                     await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
                 else:
-                    await ctx.send(f' **`{cog}: SUCCESS`**', delete_after=5.0)
+                    # await ctx.send(f' **`{cog}: SUCCESS`**', delete_after=5.0)
+                    try:
+                        await ctx.message.add_reaction('✅')
+                    except [discord.Forbidden, discord.HTTPException]:
+                        pass
 
     @staticmethod
     def cleanup_code(content):

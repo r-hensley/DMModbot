@@ -98,19 +98,28 @@ class Modbot(commands.Cog):
         # sending a message during a report
         # it tries to connect a message to a report and deliver it to the right place (either report room or DM channel)
         open_report = await self.find_current_guild(msg)
-        if open_report:  # basically, if it's not None
+        # can be None if the above message was not sent to one of the open report threads in a server: i.e., it's
+        # a random unrelated message in a server in a random channel
+        if open_report:
             try:
                 await self.send_message(msg, open_report)
             except Exception:
-                await self.close_room(open_report, error=True)
+                await self.end_report(open_report, error=True)
                 raise
 
     async def receive_new_users(self, msg: discord.Message):
         """This function is called whenever a user messages Modbot.
 
         It returns True if the user was not in any report rooms before and successfully admitted into one"""
-        # check if they're currently in a report/setting up for a report (here)
-        if msg.author.id in self.bot.db['settingup'] + list(self.bot.db['reports']):
+        # check if they're currently in a report already
+        if msg.author.id in list(self.bot.db['reports']):
+            return False
+
+        # check if they're currently in the middle of setting up a report already
+        if msg.author.id in self.bot.db['settingup']:
+            # if not a number
+            if not msg.content.isdigit():
+                await msg.add_reaction("❌")
             return False
 
         # then check if user just recently left a report room
@@ -128,7 +137,6 @@ class Modbot(commands.Cog):
             try:  # the user selects to which server they want to connect
                 self.bot.db['settingup'].append(msg.author.id)
                 guild, main_or_secondary = await self.server_select(msg)
-                self.bot.db['settingup'].remove(msg.author.id)
             except Exception:
                 self.bot.db['settingup'].remove(msg.author.id)
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -148,6 +156,8 @@ class Modbot(commands.Cog):
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                 raise
+            finally:
+                self.bot.db['settingup'].remove(msg.author.id)
 
     # for finding out which report session a certain message belongs to, None if not part of anything
     # we should only be here if a user is for sure in the report room
@@ -157,12 +167,32 @@ class Modbot(commands.Cog):
                 return None  # a message in a guild not registered for a report room
             thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)
             if msg.channel.id not in thread_id_to_thread_info:
+                if isinstance(msg.channel, discord.Thread):
+                    # check if msg.channel.parent is a guild report room
+                    guild_report_rooms = [self.bot.db['guilds'][msg.guild.id].get("channel"),
+                                          self.bot.db['guilds'][msg.guild.id].get("secondary_channel")]
+                    if msg.channel.parent_id in guild_report_rooms and "finish" == msg.content.casefold():
+                        # close thread
+                        try:
+                            await msg.add_reaction("✅")
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
+                        await self.close_thread(msg.channel, finish=True)
+                        return None
+
+                if msg.content.casefold() == "finish":
+                    await hf.edit_thread_tags(msg.channel, add=["✅"], remove=["❗", "⏹️"])
                 return None  # Message not sent in one of the active threads
 
             thread_info = thread_id_to_thread_info[msg.channel.id]
 
             # now for sure you're messaging in the report room of a guild with an active report happening
             current_user: discord.User = self.bot.get_user(thread_info["user_id"])
+            if not current_user:
+                # delete the entry out of bot.db['reports']
+                del self.bot.db['reports'][msg.author.id]
+                return None  # can't find the user
+
             report_thread = msg.channel
             dest: discord.DMChannel = current_user.dm_channel
             if not dest:
@@ -419,22 +449,38 @@ class Modbot(commands.Cog):
         If this report is a ban appeal from the ban appeals server, then msg will be None and ban_appeal will be True"""
         guild_config = self.bot.db['guilds'][guild.id]
         if main_or_secondary == 'main':
-            report_channel: discord.Thread = self.bot.get_channel(guild_config['channel'])
+            target_id = guild_config['channel']
         else:  # main_or_secondary == 'secondary'
-            report_channel: discord.Thread = self.bot.get_channel(guild_config.get('secondary_channel',
-                                                                                   guild_config.get('channel')))
+            target_id = guild_config.get('secondary_channel', guild_config.get('channel'))
+
+        report_channel: discord.Thread = self.bot.get_channel(target_id)
+        if isinstance(report_channel, discord.ForumChannel):
+            # a pinned post in forum where I can send info messages
+            meta_channel_id = self.bot.db['guilds'][guild.id].get('meta_channel')
+            if not meta_channel_id:
+                await author.send("The report room for this server is not properly setup. Please directly message "
+                                  "the mods. (I can't find the ID for the channel to send info messages in)")
+                return
+
+            meta_channel = report_channel.get_thread(meta_channel_id)
+            if not meta_channel:
+                await author.send("The report room for this server is not properly setup. Please directly message "
+                                  "the mods. (I can't find the channel to send info messages in their forum channel)")
+                return
+        else:
+            meta_channel = report_channel
 
         perms = report_channel.permissions_for(guild.me)
         if not perms.send_messages or not perms.create_public_threads:
             try:
-                await report_channel.send(f"WARNING: {author.mention} tried to join the report room, but in order "
-                                          f"to open a report here, I need the `Create Public Threads` permission "
-                                          f"in this channel. Please give me that permission and tell the user "
-                                          f"to try again.")
+                await meta_channel.send(f"WARNING: {author.mention} tried to join the report room, but in order "
+                                        f"to open a report here, I need the `Create Public Threads` permission "
+                                        f"in this channel. Please give me that permission and tell the user "
+                                        f"to try again.")
             except discord.Forbidden:
                 pass
             await author.send("The report room for this server is not properly setup. Please directly message "
-                              "the mods.")
+                              "the mods. (I don't have permission to send messages in the report room.)")
             return
 
         # #### SPECIAL STUFF FOR JP SERVER ####
@@ -452,7 +498,7 @@ class Modbot(commands.Cog):
                        f"```{msg.content}```" \
                        f"I assumed they were asking for language tag, so I told them to state their " \
                        f"native language in JHO and blocked their request to open the report room."
-                await report_room.send(embed=discord.Embed(description=text, color=0xFF0000))
+                await meta_channel.send(embed=discord.Embed(description=text, color=0xFF0000))
                 return
 
         # #### SPECIAL STUFF FOR SP SERVER ####
@@ -475,14 +521,15 @@ class Modbot(commands.Cog):
                        f"```{msg.content}```" \
                        f"I assumed they were asking how to access the server, so I told them to get a native " \
                        f"language in the newcomers channels and blocked their request to open the report room."
-                await report_room.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
+                await meta_channel.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
                 return
 
         # ##### START THE ROOM #######
         async def open_room():
             if not author.dm_channel:
                 await author.create_dm()
-            await report_channel.typing()
+            if isinstance(report_channel, discord.TextChannel):
+                await report_channel.typing()
 
             await author.dm_channel.typing()
             await asyncio.sleep(1)
@@ -520,20 +567,35 @@ class Modbot(commands.Cog):
                 """
                 # invisible character needed at end of this line to avoid whitespace trimming, added below
 
+                thread_name = f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}'
                 thread_text = dedent(thread_text)
-                entry_message: discord.Message = await report_channel.send(entry_text)
-                report_thread = await entry_message.create_thread(
-                    name=f'{author.name} report {datetime.now().strftime("%Y-%m-%d")}',
-                    auto_archive_duration=1440)  # Auto archive in 24 hours
+                if isinstance(report_channel, discord.ForumChannel):
+                    tags = []
+                    if ban_appeal:
+                        # find tag in channel.available_tags that has "Ban Appeal" in the name
+                        for t in report_channel.available_tags:
+                            # ban appeal tag: if 🚷 is the emoji (:no_pedestrians:)
+                            if str(t.emoji) == "🚷":
+                                tags.append(t)
+                            # "open" report tag: if ❗ is the emoji
+                            if str(t.emoji) == "❗":
+                                tags.append(t)
+
+                    report_thread = (await report_channel.create_thread(name=thread_name, content=entry_text,
+                                                                        applied_tags=tags)).thread
+                    entry_message = None
+                else:
+                    entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
+                    report_thread = await entry_message.create_thread(name=thread_name)  # Auto archive in 24 hours
                 await report_thread.send(thread_text)
 
-                rai = entry_message.guild.get_member(270366726737231884)
-                if rai in entry_message.guild.members:
+                rai = report_thread.guild.get_member(270366726737231884)
+                if rai in report_thread.guild.members:
                     # try to capture the modlog that will be posted by Rai, and repost it yourself
                     try:
                         rai_msg = await self.bot.wait_for("message", timeout=5.0,
                                                           check=lambda m: m.channel == report_thread and
-                                                          m.author.id == rai.id and m.embeds)
+                                                                          m.author.id == rai.id and m.embeds)
                     except asyncio.TimeoutError:
                         pass
                     else:
@@ -551,9 +613,14 @@ class Modbot(commands.Cog):
                 vertical_space = f"**Report starts here\n__{' ' * 70}__**\n\n\n{invisible_character}"
                 await report_thread.send(vertical_space)
 
-                # Add reaction signifying open room, will remove in close_room() function
+                # Add reaction signifying open room, will remove in end_report() function
                 try:
-                    await entry_message.add_reaction("❗")
+                    if isinstance(report_channel, discord.TextChannel):
+                        if entry_message:
+                            await entry_message.add_reaction("❗")
+                    elif isinstance(report_channel, discord.ForumChannel):
+                        # add the "open" tag to the thread (❗)
+                        await hf.edit_thread_tags(report_thread, add=["❗"])
                 except discord.Forbidden:
                     pass
 
@@ -635,15 +702,15 @@ class Modbot(commands.Cog):
                              "the chat will close."
 
                 await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
-                return entry_message
-            return entry_message
+                return report_thread
+            return report_thread
 
         try:
             await open_room()  # maybe this should always be True
         except Exception:
             if author.id in self.bot.db['reports']:
                 del self.bot.db['reports'][author.id]
-            await self.notify_close_room(report_channel, author.dm_channel, True)
+            await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
     """Send message"""
@@ -689,21 +756,18 @@ class Modbot(commands.Cog):
                                 "instead of `done` to avoid accidental closure of rooms by people trying to actually "
                                 "send the word `done` to the reporter. For now, I've disabled the use of the word.")
                 return
+
+            # if anyone types "end" or "close" in the report room, close the room
             if msg.content.casefold() in ['end', 'close']:
-                await self.close_room(open_report, False)
+                await self.end_report(open_report, False, finish=False)
                 return
-            if msg.content.casefold() in ['finish']:
-                await self.close_room(open_report, False)
-                try:
-                    parent_message = await msg.channel.parent.fetch_message(msg.channel.id)
-                except (discord.NotFound, discord.HTTPException, AttributeError):
-                    pass
-                else:
-                    try:
-                        await parent_message.add_reaction("✅")
-                    except (discord.Forbidden, discord.HTTPException):
-                        pass
+
+            # if the mods type "finish" (not the user in the DMs), close the room and mark it as resolved
+            if msg.content.casefold() in ["finish"]:
+                finish = isinstance(open_report.source, discord.Thread)  # True if in report room, from mods
+                await self.end_report(open_report, False, finish=finish)
                 return
+                    
             if isinstance(open_report.dest, discord.DMChannel):
                 cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}"
                 if thread_info.setdefault('not_anonymous', False):
@@ -743,7 +807,7 @@ class Modbot(commands.Cog):
             elif open_report.dest == open_report.thread:
                 await msg.channel.send("I couldn't send your message to the mods. Maybe they've locked me out "
                                        "of the report channel. I will close this chat.")
-            await self.close_room(open_report, False)
+            await self.end_report(open_report, False)
 
         else:
             try:
@@ -752,7 +816,7 @@ class Modbot(commands.Cog):
                 pass
 
     @staticmethod
-    async def notify_close_room(source, dest, error):
+    async def notify_end_thread(source, dest, error):
         is_source_thread = isinstance(source, discord.Thread)
         is_dest_thread = isinstance(dest, discord.Thread)
         if error:
@@ -779,33 +843,50 @@ class Modbot(commands.Cog):
     # for when the room is to be closed and the database reset
     # the error argument tells whether the room is being closed normally or after an error
     # source is the DM channel, dest is the report room
-    async def close_room(self, open_report: OpenReport, error):
-        await self.notify_close_room(open_report.source, open_report.dest, error)
+    async def end_report(self, open_report: OpenReport, error, finish=False):
+        await self.notify_end_thread(open_report.source, open_report.dest, error)
 
         # get thread from open_report object
         thread: discord.Thread = self.bot.get_channel(open_report.thread_info['thread_id'])
+
+        # spam_ch = self.bot.get_channel(275879535977955330)
+        # await spam_ch.send(f"{thread.parent}")
 
         # delete report info from database
         if open_report.user.id in self.bot.db['reports']:
             del self.bot.db['reports'][open_report.user.id]
 
-        # archive thread
-        if thread:
-            await thread.edit(archived=True)
-
-        # remove ❗ reaction from thread parent message if there
-        try:
-            thread_opening_message = await thread.parent.fetch_message(thread.id)
-        except (discord.NotFound, discord.HTTPException):
-            pass
-        else:
-            try:
-                await thread_opening_message.remove_reaction("❗", thread.guild.me)
-            except (discord.NotFound, discord.HTTPException):
-                pass
+        # close the thread
+        await self.close_thread(thread, finish)
 
         # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
         self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
+
+    async def close_thread(self, thread: discord.Thread, finish=False):
+        # if parent is a text channel, remove ❗ reaction from thread parent message if there
+        if isinstance(thread.parent, discord.TextChannel):
+            try:
+                thread_opening_message = await thread.parent.fetch_message(thread.id)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+            else:
+                try:
+                    await thread_opening_message.remove_reaction("❗", thread.guild.me)
+                    if finish:
+                        await thread_opening_message.add_reaction("✅")
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
+        # otherwise, if parent is a forum channel, look for tag that has "open" in name, replace it with "closed" tag
+        elif isinstance(thread.parent, discord.ForumChannel):
+            if finish:
+                await hf.edit_thread_tags(thread, add=["✅"], remove=["❗", "⏹️"])
+            else:
+                await hf.edit_thread_tags(thread, add=["⏹️"], remove=["❗"])
+
+        # archive thread
+        if finish and thread:
+            await thread.edit(archived=True)
 
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
@@ -828,7 +909,7 @@ class Modbot(commands.Cog):
                     await after.send("Failed to get the user who created this report.")
                     del self.bot.db['reports'][thread_info["user_id"]]
                     return
-                await self.close_room(OpenReport(thread_info, user, after, user.dm_channel, after), False)
+                await self.end_report(OpenReport(thread_info, user, after, user.dm_channel, after), False)
 
     #
     # ############ OTHER GENERAL COMMANDS #################

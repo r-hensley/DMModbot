@@ -74,3 +74,33 @@ class RaiView(discord.ui.View):
             e.add_field(name="Extras", value=f"```{interaction.extras}```")
 
         await send_error_embed(interaction.client, interaction, error, e)
+
+
+async def edit_thread_tags(thread: discord.Thread, add: list[str] = None, remove: list[str] = None):
+    if not add and not remove:
+        return
+    if not add:
+        add = []
+    if not remove:
+        remove = []
+
+    if not isinstance(thread, discord.Thread):
+        raise TypeError("Thread must be a discord.Thread object")
+
+    thread_tags = thread.applied_tags
+    available_tags = thread.parent.available_tags
+
+    for to_add_tag in add:
+        for tag in available_tags:
+            if str(tag.emoji) == to_add_tag:
+                thread_tags.append(tag)
+                break
+
+    for to_remove_tag in remove:
+        for tag in thread_tags:
+            if str(tag.emoji) == to_remove_tag:
+                thread_tags.remove(tag)
+                break
+
+    await thread.edit(archived=False, applied_tags=thread_tags)
+
