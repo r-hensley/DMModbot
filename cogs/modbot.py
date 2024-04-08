@@ -114,7 +114,7 @@ class Modbot(commands.Cog):
 
         # check if they're currently in the middle of setting up a report already
         if msg.author.id in self.bot.db['settingup']:
-            # if not a number
+            # if not a number (numbers are probably the user trying to specify which guild they want to connect to)
             if not msg.content.isdigit():
                 await hf.try_add_reaction(msg, "❌")
             return False
@@ -577,11 +577,19 @@ class Modbot(commands.Cog):
         await _send_typing_notif(self, channel, user)
 
     @commands.Cog.listener()
-    async def on_thread_update(self, before, after):
+    async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
+        # check if bot has view_audit_logs permission
+        if not before.guild.me.guild_permissions.view_audit_log:
+            return
+
         if not before.archived and after.archived:
-            if after.archiver_id == self.bot.user.id:
-                # I archived it, so do nothing
-                return
+            # check audit log to see who archived the thread
+            async for entry in after.guild.audit_logs(limit=5, action=discord.AuditLogAction.thread_update):
+                if entry.target.id == after.id:
+                    if entry.user.id == self.bot.user.id:
+                        # I archived it, so do nothing
+                        return
+
             # thread has been archived by someone else
             thread_id = after.id
             thread_id_to_thread_info = get_thread_id_to_thread_info(self.bot.db)

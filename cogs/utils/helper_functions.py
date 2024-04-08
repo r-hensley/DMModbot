@@ -550,4 +550,4 @@ def is_thread_in_a_report_channel(thread: discord.Thread) -> bool:
         return False
     report_channel = here.bot.db['guilds'][thread.guild.id].get('channel')
     secondary_report_channel = here.bot.db['guilds'][thread.guild.id].get('secondary_channel')
-    return thread.id in [report_channel, secondary_report_channel]
+    return thread.parent.id in [report_channel, secondary_report_channel]
