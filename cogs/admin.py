@@ -213,7 +213,7 @@ class Admin(commands.Cog):
                                                            ephemeral=True)
 
             try:
-                guild, main_or_secondary = await cog.confirm_guild(button_interaction.user, button_interaction.guild)
+                guild, main_or_secondary = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
             except discord.Forbidden:
                 await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
                                                        "privacy settings."

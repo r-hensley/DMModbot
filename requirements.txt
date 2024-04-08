@@ -5,8 +5,7 @@ async-timeout
 attrs
 chardet
 charset-normalizer
-# use `python -m pip install -U git+https://github.com/Rapptz/discord.py` to install the d.py master branch which supports threads
-discord.py @ git+https://github.com/Rapptz/discord.py
+discord.py
 frozenlist
 idna
 multidict
@@ -15,4 +14,4 @@ mypy-extensions
 tomli
 typing-extensions
 yarl
-python-dotenv
+python-dotenv~=0.20.0
