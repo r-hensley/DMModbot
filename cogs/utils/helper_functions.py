@@ -4,11 +4,16 @@ from datetime import datetime
 from textwrap import dedent
 from typing import Optional, Union
 
+import aiohttp
 import discord
 import traceback
 from discord.ext import commands
 import os
 import sys
+
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers import luhn, lsa, lex_rank, sum_basic, kl, reduction
 
 here = sys.modules[__name__]
 here.bot = None
@@ -305,9 +310,6 @@ async def add_report_to_db(author: discord.User, report_thread: discord.Thread):
 EXEMPTED_BOT_PREFIXES = ['_', ';', '.', ',', '>', '&', 't!', 't@', '$', '!', '?']
 
 
-async def create_report_thread(author, report_channel, ban_appeal):
-    entry_text = f"The user {author.mention} has entered the report room. " \
-                 f"Reply in the thread to continue. (@here)"
 def is_emoji(char):
     EMOJI_MAPPING = (
         # (0x0080, 0x02AF),
@@ -705,3 +707,90 @@ def is_thread_in_a_report_channel(thread: discord.Thread) -> bool:
     report_channel = here.bot.db['guilds'][thread.guild.id].get('channel')
     secondary_report_channel = here.bot.db['guilds'][thread.guild.id].get('secondary_channel')
     return thread.parent.id in [report_channel, secondary_report_channel]
+
+
+def summarize(text, language="english", sentences_count=1):
+    parser = PlaintextParser.from_string(text, Tokenizer(language))
+    # luhn, edmundson, lsa, lex_rank, sum_basic, kl, reduction
+    summarizers = [luhn.LuhnSummarizer(),
+                   lsa.LsaSummarizer(), lex_rank.LexRankSummarizer(),
+                   sum_basic.SumBasicSummarizer(), kl.KLSummarizer(),
+                   reduction.ReductionSummarizer()]
+    summaries = []
+    for summarizer in summarizers:
+        summaries.append(summarizer(parser.document, sentences_count))
+
+    return summaries
+
+
+async def eden_summarize(text, language="en", sentences_count=1):
+    url = "https://api.edenai.run/v2/text/summarize"
+    payload = {
+        "response_as_dict": True,
+        "attributes_as_list": False,
+        "show_original_response": False,
+        "output_sentences": sentences_count,
+        "providers": "cohere",
+        "text": text,
+        "language": language,
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": "Bearer " + os.getenv("EDEN_KEY"),
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as response:
+            return await response.text()
+
+
+async def log_record_of_report(thread: discord.Thread, author: discord.User):
+    """This will log a record of a report in the database under
+    bot.db['recent_reports'][thread.guild.id][author.id]"""
+    guild_id = thread.guild.id
+    author_id = author.id
+    if guild_id not in here.bot.db['recent_reports']:
+        here.bot.db['recent_reports'][guild_id] = {}
+    if author_id not in here.bot.db['recent_reports'][guild_id]:
+        here.bot.db['recent_reports'][guild_id][author_id] = []
+
+    thread_info = {'thread_id': thread.id, 'timestamp': datetime.utcnow()}
+    here.bot.db['recent_reports'][guild_id][author_id].append(thread_info)
+    if len(here.bot.db['recent_reports'][guild_id][author_id]) > 5:
+        here.bot.db['recent_reports'][guild_id][author_id].pop(0)
+
+    thread_text = ""
+    async for m in thread.history(limit=10, oldest_first=True):
+        if m.content.startswith(">>>"):
+            # delete ">>> <@\d{17,22}>: " from the beginning of the message
+            thread_text += m.content[m.content.find(":") + 2:] + '. '
+    thread_text = thread_text[:500]
+    spam = here.bot.get_channel(275879535977955330)
+    if len(thread_text) < 250:
+        summaries = summarize(thread_text, language="english", sentences_count=1)
+        to_send_text = f"```{thread_text}```\n\n"
+        to_send_text += "Luhn: " + str(summaries[0][0]) + "\n"
+        to_send_text += "LSA: " + str(summaries[1][0]) + "\n"
+        to_send_text += "LexRank: " + str(summaries[2][0]) + "\n"
+        to_send_text += "SumBasic: " + str(summaries[3][0]) + "\n"
+        to_send_text += "KL: " + str(summaries[4][0]) + "\n"
+        to_send_text += "Reduction: " + str(summaries[5][0]) + "\n"
+        await spam.send(to_send_text)
+    else:
+        if hasattr(here.bot, "eden"):
+            if not here.bot.eden:
+                await spam.send("The bot is not set up to use the EdenAI API.")
+                return
+        eden_result = await eden_summarize(thread_text, language="en", sentences_count=1)
+        await spam.send(f"```{thread_text}```\n```{eden_result}```")
+
+
+async def send_to_test_channel(*content):
+    content = ' '.join([str(i) for i in content])
+    channel = here.bot.get_channel(275879535977955330)
+    if channel:
+        try:
+            await channel.send(content)
+        except discord.Forbidden:
+            print("Failed to send content to test_channel in send_to_test_channel()")

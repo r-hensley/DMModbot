@@ -60,6 +60,7 @@ class Modbot(Bot):
                 "guilds": {},
                 "reports": {},
                 "user_localizations": {},
+                "recent_reports": {}
             }
 
         date = datetime.today().strftime("%d%m%Y%H%M")

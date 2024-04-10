@@ -396,7 +396,7 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                report_thread = await hf.create_report_thread(author, report_channel, ban_appeal)
+                report_thread = await hf.create_report_thread(author, msg, report_channel, ban_appeal)
 
                 # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
                 await hf.repost_rai_modlog(report_thread)
@@ -494,13 +494,13 @@ class Modbot(commands.Cog):
 
             # if anyone types "end" or "close" in the report room, close the room
             if msg.content.casefold() in ['end', 'close']:
-                await self.end_report(open_report, False, finish=False)
+                await self.end_report(open_report, error=False, finish=False)
                 raise hf.EndEarly
 
             # if the mods type "finish" (not the user in the DMs), close the room and mark it as resolved
             if msg.content.casefold() in ["finish"]:
                 finish = isinstance(open_report.source, discord.Thread)  # True if in report room, from mods
-                await self.end_report(open_report, False, finish=finish)
+                await self.end_report(open_report, error=False, finish=finish)
                 raise hf.EndEarly
 
             if isinstance(open_report.dest, discord.DMChannel):
@@ -558,9 +558,6 @@ class Modbot(commands.Cog):
         # get thread from open_report object
         thread: discord.Thread = self.bot.get_channel(open_report.thread_info['thread_id'])
 
-        # spam_ch = self.bot.get_channel(275879535977955330)
-        # await spam_ch.send(f"{thread.parent}")
-
         # delete report info from database
         if open_report.user.id in self.bot.db['reports']:
             del self.bot.db['reports'][open_report.user.id]
@@ -570,6 +567,8 @@ class Modbot(commands.Cog):
 
         # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
         self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
+
+        await hf.log_record_of_report(thread, open_report.user)
 
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
