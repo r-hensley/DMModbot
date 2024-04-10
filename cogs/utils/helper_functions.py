@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime
 from textwrap import dedent
 from typing import Optional, Union
@@ -15,6 +16,44 @@ here.loop = None
 
 SP_SERV_ID = 243838819743432704
 JP_SERV_ID = 189571157446492161
+
+_url = re.compile(
+    r"""
+            # protocol identifier
+            (?:https?|ftp)://
+            # user:pass authentication
+            (?:\S+(?::\S*)?@)?
+            (?:
+              # IP address exclusion
+              # private & local networks
+              (?!(?:10|127)(?:\.\d{1,3}){3})
+              (?!(?:169\.254|192\.168)(?:\.\d{1,3}){2})
+              (?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})
+              # IP address dotted notation octets
+              # excludes loopback network 0.0.0.0
+              # excludes reserved space >= 224.0.0.0
+              # excludes network & broacast addresses
+              # (first & last IP address of each class)
+              (?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])
+              (?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}
+              \.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4])
+            |
+              # host name
+              (?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+
+              # domain name
+              (?:\.(?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+)*
+              # TLD identifier
+              \.[a-z\u00a1-\uffff]{2,}
+              # TLD may end with dot
+              \.?
+            )
+            # port number
+            (?::\d{2,5})?
+            # resource path
+            (?:[/?#]\S*)?
+        """, re.VERBOSE | re.I)
+
+_emoji = re.compile(r'<a?(:[A-Za-z0-9_]+:|#|@|@&)!?[0-9]{17,20}>')
 
 
 def setup(bot: commands.Bot, loop):
@@ -269,6 +308,120 @@ EXEMPTED_BOT_PREFIXES = ['_', ';', '.', ',', '>', '&', 't!', 't@', '$', '!', '?'
 async def create_report_thread(author, report_channel, ban_appeal):
     entry_text = f"The user {author.mention} has entered the report room. " \
                  f"Reply in the thread to continue. (@here)"
+def is_emoji(char):
+    EMOJI_MAPPING = (
+        # (0x0080, 0x02AF),
+        # (0x0300, 0x03FF),
+        # (0x0600, 0x06FF),
+        # (0x0C00, 0x0C7F),
+        # (0x1DC0, 0x1DFF),
+        # (0x1E00, 0x1EFF),
+        # (0x2000, 0x209F),
+        # (0x20D0, 0x214F),
+        # (0x2190, 0x23FF),
+        # (0x2460, 0x25FF),
+        # (0x2600, 0x27EF),
+        # (0x2900, 0x2935),
+        # (0x2B00, 0x2BFF),
+        # (0x2C60, 0x2C7F),
+        # (0x2E00, 0x2E7F),
+        # (0x3000, 0x303F),
+        (0xA490, 0xA4CF),
+        (0xE000, 0xF8FF),
+        (0xFE00, 0xFE0F),
+        (0xFE30, 0xFE4F),
+        (0x1F000, 0x1F02F),
+        (0x1F0A0, 0x1F0FF),
+        (0x1F100, 0x1F64F),
+        (0x1F680, 0x1F6FF),
+        (0x1F910, 0x1F96B),
+        (0x1F980, 0x1F9E0),
+    )
+    return any(start <= ord(char) <= end for start, end in EMOJI_MAPPING)
+
+
+def rem_emoji_url(msg):
+    if isinstance(msg, discord.Message):
+        msg = msg.content
+    new_msg = _emoji.sub('', _url.sub('', msg))
+    for char in msg:
+        if is_emoji(char):
+            new_msg = new_msg.replace(char, '').replace('  ', '')
+    return new_msg
+
+
+async def wait_for_further_info_from_op(report_entry_message: discord.Message, desired_chars: int = 150):
+    """This will keep doing async wait_for and adding to the message until the message reaches the desired length."""
+    user_text, default_text = report_entry_message.content.split(f"\nThe user ")
+    default_text = "\nThe user " + default_text
+    if not user_text and default_text:
+        return
+
+    new_user_text = user_text
+    first = True
+
+    while len(new_user_text) < desired_chars:
+        try:
+            response = await here.bot.wait_for("message",
+                                               check=lambda m: m.channel == report_entry_message.channel
+                                               and m.author == report_entry_message.author,
+                                               timeout=1000)
+        except asyncio.TimeoutError:
+            break
+        else:
+            if not response.content.startswith(">>>"):
+                continue
+
+            # skip the first message as it's already set above as new_user_text
+            if first:
+                first = False
+                continue
+
+            # delete URLs from the message
+            candidate_text = rem_emoji_url(response)
+            # check if the text after removing spaces and punctuation no longer has any length
+            # use regex
+            if not re.search(r'\w', candidate_text):
+                continue
+
+            # Delete ">>> <@\d{17,22}>" from beginning of candidate_text
+            candidate_text = candidate_text.replace(r'>>> : ', '')
+
+            # check if new_user_text ends with some kind of punctuation
+            if new_user_text.endswith(",") or new_user_text.endswith("!") or new_user_text.endswith("?"):
+                new_user_text += f" {candidate_text}"
+            else:
+                new_user_text += f". {candidate_text}"
+
+            # try fetching thread again to get its current status
+            # if archived, stop trying to edit the message
+            current_thread = report_entry_message.channel.parent.get_thread(report_entry_message.id)
+            if current_thread:
+                if current_thread.archived:
+                    return
+            else:
+                return
+
+            if new_user_text != user_text:
+                if len(new_user_text) > desired_chars:
+                    new_content = f"{new_user_text[:desired_chars]} [・・・]\n{default_text}"
+                    await report_entry_message.edit(content=new_content)
+                    break
+                else:
+                    new_content = f"{new_user_text}\n{default_text}"
+                    await report_entry_message.edit(content=new_content)
+
+
+async def create_report_thread(author: discord.User, msg: discord.Message,
+                               report_channel: Union[discord.TextChannel, discord.ForumChannel],
+                               ban_appeal: bool):
+    entry_text = ""
+    if msg:
+        if len(msg.content) > 150:
+            entry_text = f"{msg.content[:150]} [・・・]\n"
+        else:
+            entry_text = f"{msg.content}\n"
+    entry_text += f"The user {author.mention} has entered the report room. Reply in the thread to continue. (@here)"
 
     member = report_channel.guild.get_member(author.id)
     if member:
@@ -309,6 +462,7 @@ async def create_report_thread(author, report_channel, ban_appeal):
         report_thread = (await report_channel.create_thread(name=thread_name,
                                                             content=f"{entry_text}\n{thread_text}",
                                                             applied_tags=tags_to_add)).thread
+        asyncio.create_task(wait_for_further_info_from_op(report_thread.starter_message, 150))
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
         await try_add_reaction(entry_message, "❗")
