@@ -212,6 +212,8 @@ async def _pre_repost_rai_modlog(report_thread: discord.Thread):
 
 async def repost_rai_modlog(report_thread: discord.Thread):
     """This will create a task to call the _pre_repost_rai_modlog function."""
+    # error in PyCharm IDE, it wants me to put "await", but that would block the code
+    # noinspection PyAsyncCall
     asyncio.create_task(_pre_repost_rai_modlog(report_thread))
 
 
@@ -413,6 +415,74 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message, d
                     new_content = f"{new_user_text}\n{default_text}"
                     await report_entry_message.edit(content=new_content)
 
+async def log_record_of_report(thread: discord.Thread, author: discord.User):
+    """This will log a record of a report in the database under
+    bot.db['recent_reports'][thread.guild.id][author.id]"""
+    guild_id = thread.guild.id
+    author_id = author.id
+    if guild_id not in here.bot.db['recent_reports']:
+        here.bot.db['recent_reports'][guild_id] = {}
+    if author_id not in here.bot.db['recent_reports'][guild_id]:
+        here.bot.db['recent_reports'][guild_id][author_id] = []
+    
+    # thread_info: {'thread_id': int, 'timestamp': int, 'summary': str}
+    thread_info = {'thread_id': thread.id, 'timestamp': int(datetime.utcnow().timestamp())}
+    
+    thread_text = ""
+    async for m in thread.history(limit=10, oldest_first=True):
+        if m.content.startswith(">>>"):
+            # delete ">>> <@\d{17,22}>: " from the beginning of the message
+            thread_text += m.content[m.content.find(":") + 2:] + '. '
+    thread_text = thread_text[:500]
+    
+    if not thread_text:
+        pass
+    elif len(thread_text) < 250:
+        summary = summarize(thread_text, language="english", sentences_count=1)
+        summary = str(summary[0]).replace('\n', '. ')
+        thread_info['summary'] = summary
+    else:
+        if hasattr(here.bot, "eden"):
+            if not here.bot.eden:
+                pass
+            else:
+                summary = await eden_summarize(thread_text, language="en", sentences_count=1)
+                summary = summary.replace('\n', '. ')
+                thread_info['summary'] = summary
+    
+    here.bot.db['recent_reports'][guild_id][author_id].append(thread_info)
+    if len(here.bot.db['recent_reports'][guild_id][author_id]) > 5:
+        here.bot.db['recent_reports'][guild_id][author_id].pop(0)
+        
+def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> str:
+    """This will add a list of recent reports from the user to the thread text.
+    Params:
+    - thread_text: str: The text of the thread to add the recent reports to.
+    - author_id: int: The ID of the user to get the recent reports from.
+    - guild_id: int: The ID of the guild to get the recent reports from.
+    Returns: str: The thread text with the recent reports added."""
+    try:
+        past_reports: list[dict] = here.bot.db['recent_reports'][guild_id][author_id]
+    except KeyError:
+        return thread_text
+    
+    if not past_reports:
+        return thread_text
+    else:
+        thread_text += "\n\n**__Recent reports:__**\n"
+    for thread_info in past_reports:
+        # thread_info: {'thread_id': int, 'timestamp': int, 'summary': str}
+        # add a single-line bullet point containing very shortly just the thread date and summary
+        message_link = f"<https://discord.com/channels/{guild_id}/{thread_info['thread_id']}>"
+        date_timestamp: int = thread_info['timestamp']
+        # format using discord time string, <t:TIMESTAMP:f>
+        thread_text += f"• [<t:{date_timestamp}:f>]({message_link})"
+        if thread_info.get('summary', ''):
+            thread_text += f" - {thread_info['summary']}"
+        thread_text += "\n"
+    
+    return thread_text
+
 
 async def create_report_thread(author: discord.User, msg: discord.Message,
                                report_channel: Union[discord.TextChannel, discord.ForumChannel],
@@ -452,9 +522,11 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
                           Currently exempted bot prefixes:
                           `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
                     """
+    
+    thread_text = dedent(thread_text)
+    thread_text = add_recent_report_info(thread_text, author.id, report_channel.guild.id)
 
     thread_name = f'{author.name} ({datetime.now().strftime("%Y-%m-%d")})'
-    thread_text = dedent(thread_text)
     if isinstance(report_channel, discord.ForumChannel):
         if ban_appeal:
             tags_to_add, _ = make_tags_list_for_forum_post(report_channel, ["🚷", "❗"])
@@ -464,6 +536,9 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
         report_thread = (await report_channel.create_thread(name=thread_name,
                                                             content=f"{entry_text}\n{thread_text}",
                                                             applied_tags=tags_to_add)).thread
+        
+        # error in PyCharm IDE, it wants me to put "await", but that would block the code
+        # noinspection PyAsyncCall
         asyncio.create_task(wait_for_further_info_from_op(report_thread.starter_message, 150))
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
@@ -712,15 +787,14 @@ def is_thread_in_a_report_channel(thread: discord.Thread) -> bool:
 def summarize(text, language="english", sentences_count=1):
     parser = PlaintextParser.from_string(text, Tokenizer(language))
     # luhn, edmundson, lsa, lex_rank, sum_basic, kl, reduction
-    summarizers = [luhn.LuhnSummarizer(),
-                   lsa.LsaSummarizer(), lex_rank.LexRankSummarizer(),
-                   sum_basic.SumBasicSummarizer(), kl.KLSummarizer(),
-                   reduction.ReductionSummarizer()]
-    summaries = []
-    for summarizer in summarizers:
-        summaries.append(summarizer(parser.document, sentences_count))
+    # summarizers = [luhn.LuhnSummarizer(),
+    #                lsa.LsaSummarizer(), lex_rank.LexRankSummarizer(),
+    #                sum_basic.SumBasicSummarizer(), kl.KLSummarizer(),
+    #                reduction.ReductionSummarizer()]
+    summarizer = lsa.LsaSummarizer()
+    summary = summarizer(parser.document, sentences_count)
 
-    return summaries
+    return summary
 
 
 async def eden_summarize(text, language="en", sentences_count=1):
@@ -745,45 +819,6 @@ async def eden_summarize(text, language="en", sentences_count=1):
             return await response.text()
 
 
-async def log_record_of_report(thread: discord.Thread, author: discord.User):
-    """This will log a record of a report in the database under
-    bot.db['recent_reports'][thread.guild.id][author.id]"""
-    guild_id = thread.guild.id
-    author_id = author.id
-    if guild_id not in here.bot.db['recent_reports']:
-        here.bot.db['recent_reports'][guild_id] = {}
-    if author_id not in here.bot.db['recent_reports'][guild_id]:
-        here.bot.db['recent_reports'][guild_id][author_id] = []
-
-    thread_info = {'thread_id': thread.id, 'timestamp': datetime.utcnow()}
-    here.bot.db['recent_reports'][guild_id][author_id].append(thread_info)
-    if len(here.bot.db['recent_reports'][guild_id][author_id]) > 5:
-        here.bot.db['recent_reports'][guild_id][author_id].pop(0)
-
-    thread_text = ""
-    async for m in thread.history(limit=10, oldest_first=True):
-        if m.content.startswith(">>>"):
-            # delete ">>> <@\d{17,22}>: " from the beginning of the message
-            thread_text += m.content[m.content.find(":") + 2:] + '. '
-    thread_text = thread_text[:500]
-    spam = here.bot.get_channel(275879535977955330)
-    if len(thread_text) < 250:
-        summaries = summarize(thread_text, language="english", sentences_count=1)
-        to_send_text = f"```{thread_text}```\n\n"
-        to_send_text += "Luhn: " + str(summaries[0][0]) + "\n"
-        to_send_text += "LSA: " + str(summaries[1][0]) + "\n"
-        to_send_text += "LexRank: " + str(summaries[2][0]) + "\n"
-        to_send_text += "SumBasic: " + str(summaries[3][0]) + "\n"
-        to_send_text += "KL: " + str(summaries[4][0]) + "\n"
-        to_send_text += "Reduction: " + str(summaries[5][0]) + "\n"
-        await spam.send(to_send_text)
-    else:
-        if hasattr(here.bot, "eden"):
-            if not here.bot.eden:
-                await spam.send("The bot is not set up to use the EdenAI API.")
-                return
-        eden_result = await eden_summarize(thread_text, language="en", sentences_count=1)
-        await spam.send(f"```{thread_text}```\n```{eden_result}```")
 
 
 async def send_to_test_channel(*content):
