@@ -274,21 +274,35 @@ class Owner(commands.Cog):
             await ctx.send(f"Bot doesn't have the permission to create threads in {forum_channel.mention}")
             return
         if not perms.manage_channels:
-            await ctx.send(f"Bot doesn't have the permission to manage channels in {forum_channel.mention}")
+            await ctx.send(f"Bot doesn't have the permission to manage channels in {forum_channel.mention} "
+                           f"(it's necessary just for creating the default tags for posts, you can remove it "
+                           f"afterwards!)")
             return
         if not perms.manage_threads:
-            await ctx.send(f"Bot doesn't have the permission to manage threads in {forum_channel.mention}")
+            await ctx.send(f"Bot doesn't have the permission to manage threads in {forum_channel.mention} "
+                           f"(it's necessary for being able to archive threads!)")
             return
         # create the meta discussion post
         txt = "This is the meta discussion post for the forum. Please use this post to discuss anything related to " \
               "the forum."
         meta_post = (await forum_channel.create_thread(name='Meta Discussion', content=txt)).thread
-        await meta_post.edit(pinned=True)
+
+        try:
+            await meta_post.edit(pinned=True)
+        except discord.HTTPException as e:
+            if e.code == 30047:
+                # discord.errors.HTTPException: 400 Bad Request (error code: 30047):
+                # Maximum number pinned threads in this channel reached (1).
+                await ctx.send(f"Couldn't pin the meta post in {forum_channel.mention} because forum post already "
+                               f"has one pinned post. Please remove that!")
+                return
+            
         # create the tags
-        tags = ['Complete', 'Open', 'Closed (Unresolved)', 'Ban Appeal']
-        emoji = ['✅', '❗', '⏹️', '🚷']
-        for tag in tags:
-            await forum_channel.create_tag(name=tag, emoji=emoji[tags.index(tag)])
+        tags = {'Complete': '✅', 'Open': '❗', 'Closed (Unresolved)': '⏹️', 'Ban Appeal': '🚷'}
+        for name, emoji in tags.items():
+            await hf.send_to_test_channel(name, emoji, discord.PartialEmoji.from_str(emoji))
+            await forum_channel.create_tag(name=name, emoji=discord.PartialEmoji.from_str(emoji))
+            
         # update bot.db['guilds']['meta_channel'] with the new channel id
         self.bot.db['guilds'][ctx.guild.id]['channel'] = forum_channel_id
         self.bot.db['guilds'][ctx.guild.id]['meta_channel'] = meta_post.id
