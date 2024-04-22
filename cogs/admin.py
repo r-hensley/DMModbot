@@ -164,7 +164,7 @@ class Admin(commands.Cog):
                            "inputted the command, the reporter will have been shown your username.")
 
     @commands.command()
-    async def send(self, ctx, user_id: int, *, msg):
+    async def send(self, ctx: commands.Context, user_id: int, *, msg: str):
         """Sends a message to the channel ID specified"""
         channel = self.bot.get_channel(user_id)
         if not channel:
@@ -172,6 +172,16 @@ class Admin(commands.Cog):
             if not channel:
                 await ctx.send("Invalid ID")
                 return
+            
+        if hasattr(channel, "guild"):
+            if channel.guild != ctx.guild:
+                await ctx.send("You can only send messages to channels in this server.")
+                return
+        elif isinstance(channel, discord.User):
+            if channel not in ctx.guild.members:
+                await ctx.send("You can only send messages to users in this server.")
+                return
+            
         try:
             await channel.send(f"Message from the mods of {ctx.guild.name}: {msg}")
         except discord.Forbidden:
