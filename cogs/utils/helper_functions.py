@@ -439,8 +439,9 @@ async def log_record_of_report(thread: discord.Thread, author: discord.User):
         pass
     elif len(thread_text) < 250:
         summary = summarize(thread_text, language="english", sentences_count=1)
-        summary = str(summary[0]).replace('\n', '. ')
-        thread_info['summary'] = summary
+        if summary:
+            summary = str(summary[0]).replace('\n', '. ')
+            thread_info['summary'] = summary
     else:
         if hasattr(here.bot, "eden"):
             if not here.bot.eden:
