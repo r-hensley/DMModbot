@@ -476,7 +476,7 @@ def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> s
         message_link = f"<https://discord.com/channels/{guild_id}/{thread_info['thread_id']}>"
         date_timestamp: int = thread_info['timestamp']
         # format using discord time string, <t:TIMESTAMP:f>
-        thread_text += f"• [<t:{date_timestamp}:f>]({message_link})"
+        thread_text += f"• [<t:{date_timestamp}:f> (link)]({message_link})"
         if thread_info.get('summary', ''):
             thread_text += f" - {thread_info['summary']}"
         thread_text += "\n"
@@ -797,7 +797,7 @@ def summarize(text, language="english", sentences_count=1):
     return summary
 
 
-async def eden_summarize(text, language="en", sentences_count=1):
+async def eden_summarize(text, language="en", sentences_count=1) -> str:
     url = "https://api.edenai.run/v2/text/summarize"
     payload = {
         "response_as_dict": True,
@@ -816,7 +816,16 @@ async def eden_summarize(text, language="en", sentences_count=1):
 
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers) as response:
-            return await response.text()
+            response = await response.json()
+            
+    if 'cohere' in response:
+        response = response['cohere']
+        if response['status'] == 'success':
+            return response['result']
+    
+    # if the response is not successful, raise an error
+    raise Exception(f"EdenAI API returned an error: {response}")
+    
 
 
 
