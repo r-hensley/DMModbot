@@ -13,7 +13,7 @@ import sys
 
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers import luhn, lsa, lex_rank, sum_basic, kl, reduction
+from sumy.summarizers import lsa
 
 here = sys.modules[__name__]
 here.bot = None
@@ -80,33 +80,89 @@ class EndEarly(Exception):
 
 
 async def send_error_embed(bot: discord.Client,
-                           ctx: Union[commands.Context, discord.Interaction],
-                           error: Exception,
-                           embed: discord.Embed):
-    error = getattr(error, 'original', error)
-    try:
-        qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
-    except AttributeError:  # ctx.command.name is also None
-        qualified_name = "Non-command"
+                           ctx_or_event: Union[commands.Context, discord.Interaction, str],
+                           error: BaseException,
+                           *args, **kwargs):
+    # command or interaction
+    if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
+        ctx = ctx_or_event
+        msg = ctx.message
+        
+        try:
+            qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
+        except AttributeError:  # ctx.command.name is also None
+            qualified_name = "Non-command"
+        e = discord.Embed(title='Command Error', colour=0xcc3366)
+        e.add_field(name='Name', value=qualified_name)
+        
+        fmt = f'Channel: {ctx.channel} (ID: {ctx.channel.id})'
+        if ctx.guild:
+            fmt = f'{fmt}\nGuild: {ctx.guild} (ID: {ctx.guild.id})'
+        e.add_field(name='Location', value=fmt, inline=False)
+    
+    # event
+    else:
+        ctx = None
+        event = ctx_or_event
+        msg = None
+
+        qualified_name = event
+        e = discord.Embed(title='Event Error', colour=0xa32952)
+        e.add_field(name='Event', value=event)
+        e.description = f'```py\n{traceback.format_exc()}\n```'
+        e.timestamp = discord.utils.utcnow()
+        
+        args_str = ['```py']
+        for index, arg in enumerate(args):
+            # print(type(arg))
+            args_str.append(f'[{index}]: {arg!r}')
+            if type(arg) == discord.Message:
+                msg = arg
+                
+        args_str.append('```')
+        e.add_field(name='Args', value='\n'.join(args_str), inline=False)
+        # await self.error_channel.send(jump_url, embed=e)
+        # traceback.print_exc()
+        
+    if msg:
+        e.add_field(name="Author", value=f'{msg.author} (ID: {msg.author.id})')
+        e.add_field(name="Message Content", value=f'```{msg.content[:1024-6]}```', inline=False)
+
+        jump_url = msg.jump_url
+    else:
+        jump_url = ""
+        
+    # error = getattr(error, 'original', error)
+    # try:
+    #     qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
+    # except AttributeError:  # ctx.command.name is also None
+    #     qualified_name = "Non-command"
+    
     traceback.print_tb(error.__traceback__)
     print(discord.utils.utcnow())
     print(f'Error in {qualified_name}:', file=sys.stderr)
     print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
 
     exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
-    if ctx.message:
-        traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
-    elif ctx.channel:
-        traceback_text = f'{ctx.channel.mention}\n```py\n{exc}```'
+    
+    if ctx:
+        if ctx.message:
+            traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
+        elif ctx.channel:
+            traceback_text = f'{ctx.channel.mention}\n```py\n{exc}```'
+        else:
+            traceback_text = f'```py\n{exc}```'
+    elif jump_url:
+        traceback_text = f'{jump_url}\n```py\n{exc}```'
     else:
         traceback_text = f'```py\n{exc}```'
 
-    embed.timestamp = discord.utils.utcnow()
+    e.timestamp = discord.utils.utcnow()
     traceback_logging_channel = int(os.getenv("ERROR_CHANNEL_ID"))
     view = None
-    if ctx.message:
+    if getattr(ctx, "message", None):
         view = RaiView.from_message(ctx.message)
-    await bot.get_channel(traceback_logging_channel).send(traceback_text[-2000:], embed=embed, view=view)
+    await bot.get_channel(traceback_logging_channel).send(traceback_text[-2000:], embed=e, view=view)
     print('')
 
 
@@ -354,65 +410,93 @@ def rem_emoji_url(msg):
     return new_msg
 
 
-async def wait_for_further_info_from_op(report_entry_message: discord.Message, desired_chars: int = 150):
+async def wait_for_further_info_from_op(report_entry_message: discord.Message,
+                                        desired_chars: int = 150,
+                                        ban_appeal: bool = False):
     """This will keep doing async wait_for and adding to the message until the message reaches the desired length."""
-    user_text, default_text = report_entry_message.content.split(f"\nThe user ")
-    default_text = "\nThe user " + default_text
-    if not user_text and default_text:
+    debug = True  # enable debug prints
+    original_user_text, default_text = report_entry_message.content.split(f"\nThe user ")
+    if not default_text:
         return
+    default_text = "\nThe user " + default_text
+    if ban_appeal:
+        preface_text = original_user_text.split("\n", 1)[0] + "\n"
+        original_user_text = "**"  # there will be no other text if it's a ban appeal
+        
+        # The user will not have sent a message yet, but "BAN APPEAL" will be in the "user_text" variable
+        skip_next_message = False
+    else:
+        preface_text = ""
+        
+        # The "user_text" variable will already contain the first message sent by the user
+        # Therefore, when it arrives in the report window, don't add it again
+        skip_next_message = bool(original_user_text)
 
-    new_user_text = user_text
-    first = True
+    original_user_text = original_user_text.replace("**", "")
+    new_user_text = original_user_text
+    
+    await send_to_test_channel(f"```{preface_text}```", "\n", f"```{original_user_text}```", "\n",
+                               skip_next_message, debug=debug)
 
     while len(new_user_text) < desired_chars:
         try:
+            await send_to_test_channel("Waiting for info from OP", debug=debug)
             response = await here.bot.wait_for("message",
                                                check=lambda m: m.channel == report_entry_message.channel
                                                and m.author == report_entry_message.author,
                                                timeout=1000)
         except asyncio.TimeoutError:
+            await send_to_test_channel("Timeout", debug=debug)
             break
         else:
+            await send_to_test_channel(response.content, debug=debug)
             if not response.content.startswith(">>>"):
+                await send_to_test_channel(f"Not a reply", debug=debug)
                 continue
 
-            # skip the first message as it's already set above as new_user_text
-            if first:
-                first = False
+            # skip the first message if it's already set above as new_user_text
+            if skip_next_message:
+                skip_next_message = False
+                await send_to_test_channel("Skipping next message", debug=debug)
                 continue
 
             # delete URLs from the message
             candidate_text = rem_emoji_url(response)
+            
             # check if the text after removing spaces and punctuation no longer has any length
             # use regex
             if not re.search(r'\w', candidate_text):
+                await send_to_test_channel("No word characters in candidate_text", debug=debug)
                 continue
 
             # Delete ">>> <@\d{17,22}>" from beginning of candidate_text
             candidate_text = candidate_text.replace(r'>>> : ', '')
 
             # check if new_user_text ends with some kind of punctuation
-            if new_user_text.endswith(",") or new_user_text.endswith("!") or new_user_text.endswith("?"):
-                new_user_text += f" {candidate_text}"
+            if new_user_text[-1] in ",.!?\n":
+                new_user_text = new_user_text[:-2] + f" {candidate_text}"
             else:
-                new_user_text += f". {candidate_text}"
+                new_user_text = new_user_text[:-2] + f". {candidate_text}"
 
             # try fetching thread again to get its current status
             # if archived, stop trying to edit the message
             current_thread = report_entry_message.channel.parent.get_thread(report_entry_message.id)
             if current_thread:
                 if current_thread.archived:
+                    await send_to_test_channel("Thread is archived", debug=debug)
                     return
             else:
+                await send_to_test_channel("Thread is None", debug=debug)
                 return
 
-            if new_user_text != user_text:
+            if new_user_text != original_user_text:
                 if len(new_user_text) > desired_chars:
-                    new_content = f"{new_user_text[:desired_chars]} [・・・]\n{default_text}"
+                    new_content = f"{preface_text}**{new_user_text[:desired_chars]}** [・・・]\n{default_text}"
                     await report_entry_message.edit(content=new_content)
+                    await send_to_test_channel(f"MAX_LENGTH_BREAK: {len(new_user_text)}: {new_user_text}", debug=debug)
                     break
                 else:
-                    new_content = f"{new_user_text}\n{default_text}"
+                    new_content = f"{preface_text}**{new_user_text}**\n{default_text}"
                     await report_entry_message.edit(content=new_content)
 
 async def log_record_of_report(thread: discord.Thread, author: discord.User):
@@ -455,6 +539,7 @@ async def log_record_of_report(thread: discord.Thread, author: discord.User):
     if len(here.bot.db['recent_reports'][guild_id][author_id]) > 5:
         here.bot.db['recent_reports'][guild_id][author_id].pop(0)
         
+        
 def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> str:
     """This will add a list of recent reports from the user to the thread text.
     Params:
@@ -491,9 +576,9 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
     entry_text = ""
     if msg:
         if len(msg.content) > 150:
-            entry_text = f"{msg.content[:150]} [・・・]\n"
+            entry_text = f"**{msg.content[:150]}** [・・・]\n"
         else:
-            entry_text = f"{msg.content}\n"
+            entry_text = f"**{msg.content}**\n"
     entry_text += f"The user {author.mention} has entered the report room. Reply in the thread to continue. (@here)"
 
     member = report_channel.guild.get_member(author.id)
@@ -502,7 +587,7 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
             entry_text = entry_text.replace("@here", "@ here ~ exempted for staff testing")
 
     if ban_appeal:
-        entry_text = f"**__BAN APPEAL__**\n" + entry_text
+        entry_text = f"*(Ban Appeal)*\n" + entry_text
         entry_text = entry_text.replace(author.mention,
                                         f"{author.mention} ({str(author)}, {author.id})")
 
@@ -540,7 +625,7 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
         
         # error in PyCharm IDE, it wants me to put "await", but that would block the code
         # noinspection PyAsyncCall
-        asyncio.create_task(wait_for_further_info_from_op(report_thread.starter_message, 150))
+        asyncio.create_task(wait_for_further_info_from_op(report_thread.starter_message, 150, ban_appeal))
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
         await try_add_reaction(entry_message, "❗")
@@ -828,10 +913,9 @@ async def eden_summarize(text, language="en", sentences_count=1) -> str:
     raise Exception(f"EdenAI API returned an error: {response}")
     
 
-
-
-
-async def send_to_test_channel(*content):
+async def send_to_test_channel(*content, debug=True):
+    if not debug:
+        return
     content = ' '.join([str(i) for i in content])
     channel = here.bot.get_channel(275879535977955330)
     if channel:
@@ -839,3 +923,20 @@ async def send_to_test_channel(*content):
             await channel.send(content)
         except discord.Forbidden:
             print("Failed to send content to test_channel in send_to_test_channel()")
+
+
+# create a command to run asyncio.create_task(),
+# and then add "add_done_callback" to it that calls exceptions from send_error_embed()
+def asyncio_task(func, *args, **kwargs):
+    task = asyncio.create_task(func(*args, **kwargs))
+    task.add_done_callback(asyncio_task_done_callback)
+    
+
+def asyncio_task_done_callback(task):
+    print(f"Task {task.get_coro().__qualname__} done.")
+    if task.exception():
+        print("Error")
+        # Create a new task for the asynchronous function
+        asyncio.create_task(send_error_embed(here.bot, task.get_coro().__qualname__, task.exception()))
+    else:
+        print(f"Task {task.get_coro().__qualname__} completed successfully.")

@@ -77,6 +77,26 @@ class Owner(commands.Cog):
             await ctx.message.add_reaction('✅')
         except (discord.HTTPException, discord.Forbidden):
             pass
+    
+    @commands.command(hidden=True)
+    async def load(self, ctx, *, cog: str):
+        """Command which loads a module."""
+        
+        try:
+            await self.bot.load_extension(f'cogs.{cog}')
+        except Exception as e:
+            await ctx.send('**`ERROR:`** {} - {}'.format(type(e).__name__, e))
+        else:
+            await ctx.send('**`SUCCESS`**')
+    
+    @commands.command(hidden=True)
+    async def unload(self, ctx, *, cog: str):
+        try:
+            await self.bot.unload_extension(f'cogs.{cog}')
+        except Exception as e:
+            await ctx.send('**`ERROR:`** {} - {}'.format(type(e).__name__, e))
+        else:
+            await ctx.send('**`SUCCESS`**')
 
     @commands.command(hidden=True)
     async def reload(self, ctx, *, cogs: str):

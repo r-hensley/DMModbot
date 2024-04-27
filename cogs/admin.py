@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import discord
 from discord import app_commands
@@ -65,9 +66,38 @@ def is_admin(ctx):
     return mod_role in ctx.author.roles
 
 
+async def reinitialize_buttons(admin):
+    # example DB:
+    # {
+    # 'start_appeal_button':
+    #   {986061548877410354: 1233599842983477258,
+    #   1024106910225535076: 1233600145963094056,
+    #   1024106387472666715: 1233600190284304414,
+    #   985968511455232000: 1233600227957805158,
+    #   985968434263257138: 1233600254239309895},
+    # 'report_button': {554572239836545074: 1233599933563666462, 774660366620950538: 1233601399024124026},
+    # 'main_start_button': {985967093411368981: 1233600929740230667}
+    # }
+    for button_name, button_dict in admin.bot.db['buttons'].items():
+        # if button_name == 'start_appeal_button':
+        #     for channel_id, msg_id in button_dict.items():
+        #         await unbans.setup_appeal_button_view(channel_id, msg_id)
+        
+        if button_name == 'report_button':
+            for channel_id, msg_id in button_dict.items():
+                await admin.setup_report_button_view(channel_id, msg_id)
+        
+        # elif button_name == 'main_start_button':
+        #     for channel_id, msg_id in button_dict.items():
+        #         await unbans.setup_appeal_button_view(channel_id, msg_id)
+
+
 class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        
+    async def cog_load(self):
+        await reinitialize_buttons(self)
 
     async def cog_check(self, ctx):
         return is_admin(ctx)
@@ -194,54 +224,70 @@ class Admin(commands.Cog):
                 await ctx.message.add_reaction("✅")
             except (discord.Forbidden, discord.NotFound):
                 pass
+    
+    async def report_button_callback(self, button_interaction: discord.Interaction):
+        cog: Modbot = self.bot.get_cog("Modbot")
+        try:
+            await button_interaction.user.create_dm()
+        except discord.Forbidden:
+            await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
+        
+        # create a link to bring user to their own DM, it will look like this
+        # https://discord.com/channels/@me/713269937556291696/9999999999999999999
+        # the '9' * 19 at the end refers to a message ID. Choosing 9999... will bring user to the bottom of the chat
+        dm_url_link = f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}"
+        await button_interaction.response.send_message(f"Check your private messages from me → {dm_url_link}",
+                                                       ephemeral=True)
+        
+        try:
+            guild, main_or_secondary = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
+        except discord.Forbidden:
+            await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
+                                                   "privacy settings."
+                                                   " Please enable messages from users from this server.",
+                                                   ephemeral=True)
+            return
+        
+        if guild:
+            await cog.start_report_room(button_interaction.user, guild, msg=None,
+                                        main_or_secondary=main_or_secondary, ban_appeal=False)
 
+    async def setup_report_button_view(self,
+                                       channel_id: int,
+                                       msg_id: int = None) -> Optional[discord.Message]:
+        button_text = "Start report or support ticket"
+        button = discord.ui.Button(label=button_text, style=discord.ButtonStyle.primary)
+        
+        button.callback = self.report_button_callback
+        view = hf.RaiView(timeout=None)
+        view.add_item(button)
+        
+        channel = self.bot.get_channel(channel_id)
+        if msg_id:
+            to_edit_msg = await channel.fetch_message(msg_id)
+            if to_edit_msg:
+                msg = await to_edit_msg.edit(view=view)
+                return msg
+            else:
+                return None
+        else:
+            text = ("Click the button to start a report or support ticket with the staff.\n"
+                    "Haz clic en el botón para iniciar un reporte o un ticket de soporte con el staff.")
+            embed = discord.Embed(description=text, color=0x7270f8)
+            msg = await channel.send(embed=embed, view=view)
+            
+            # set up button ID for reaction handling
+            self.bot.db['buttons'].setdefault("report_button", {})
+            self.bot.db['buttons']["report_button"][channel.id] = msg.id
+        
+        return msg
+        
     @app_commands.command()
     @app_commands.default_permissions()
     @app_commands.guilds(SP_SERV_ID, RY_TEST_SERV_ID)
     async def create_report_button(self, interaction: discord.Interaction):
         """Creates a report button in the current channel"""
-        text = ("Click the button to start a report or support ticket with the staff.\n"
-                "Haz clic en el botón para iniciar un reporte o un ticket de soporte con el staff.")
-        button_text = "Start report or support ticket"
-
-        embed = discord.Embed(description=text, color=0x7270f8)
-
-        button = discord.ui.Button(label=button_text, style=discord.ButtonStyle.primary)
-
-        async def button_callback(button_interaction: discord.Interaction):
-            cog: Modbot = self.bot.get_cog("Modbot")
-            try:
-                await button_interaction.user.create_dm()
-            except discord.Forbidden:
-                await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
-
-            # create a link to bring user to their own DM, it will look like this
-            # https://discord.com/channels/@me/713269937556291696/9999999999999999999
-            # the '9' * 19 at the end refers to a message ID. Choosing 9999... will bring user to the bottom of the chat
-            dm_url_link = f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}"
-            await button_interaction.response.send_message(f"Check your private messages from me → {dm_url_link}",
-                                                           ephemeral=True)
-
-            try:
-                guild, main_or_secondary = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
-            except discord.Forbidden:
-                await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
-                                                       "privacy settings."
-                                                       " Please enable messages from users from this server.",
-                                                       ephemeral=True)
-                return
-
-            if guild:
-                await cog.start_report_room(button_interaction.user, guild, msg=None,
-                                            main_or_secondary=main_or_secondary, ban_appeal=False)
-
-        button.callback = button_callback
-        view = hf.RaiView(timeout=None)
-        view.add_item(button)
-
-        msg = await interaction.channel.send(embed=embed)
-        await msg.edit(view=view)
-
+        await self.setup_report_button_view(interaction.channel)
         await interaction.response.send_message("I've created the message", ephemeral=True)
 
     @app_commands.command()

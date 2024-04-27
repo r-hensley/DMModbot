@@ -10,25 +10,26 @@ RYRY_ID = 202995638860906496
 TEST_SERVER_ID = 275146036178059265
 
 
-async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    qualified_name = getattr(interaction.command, 'qualified_name', interaction.command.name)
-    e = discord.Embed(title=f'App Command Error ({interaction.type})', colour=0xcc3366)
-    e.add_field(name='Name', value=qualified_name)
-    e.add_field(name='Author', value=interaction.user)
-
-    fmt = f'Channel: {interaction.channel} (ID: {interaction.channel.id})'
-    if interaction.guild:
-        fmt = f'{fmt}\nGuild: {interaction.guild} (ID: {interaction.guild.id})'
-
-    e.add_field(name='Location', value=fmt, inline=False)
-
-    if interaction.data:
-        e.add_field(name="Data", value=f"```{interaction.data}```")
-
-    if interaction.extras:
-        e.add_field(name="Extras", value=f"```{interaction.extras}```")
-
-    await hf.send_error_embed(interaction.client, interaction, error, e)
+async def reinitialize_buttons(unbans):
+    # example DB:
+    # {
+    # 'start_appeal_button':
+    #   {986061548877410354: 1233599842983477258,
+    #   1024106910225535076: 1233600145963094056,
+    #   1024106387472666715: 1233600190284304414,
+    #   985968511455232000: 1233600227957805158,
+    #   985968434263257138: 1233600254239309895},
+    # 'report_button': {554572239836545074: 1233599933563666462, 774660366620950538: 1233601399024124026},
+    # 'main_start_button': {985967093411368981: 1233600929740230667}
+    # }
+    for button_name, button_dict in unbans.bot.db['buttons'].items():
+        if button_name == 'start_appeal_button':
+            for channel_id, msg_id in button_dict.items():
+                await unbans.setup_appeal_button_view(channel_id, msg_id)
+        
+        elif button_name == 'main_start_button':
+            for channel_id, msg_id in button_dict.items():
+                await unbans.setup_appeal_button_view(channel_id, msg_id)
 
 
 class Unbans(commands.Cog):
@@ -38,9 +39,11 @@ class Unbans(commands.Cog):
     When users are banned, if they join this server they can initiate an unban request through modbot.
     """
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: commands.Bot = bot
         self.ban_appeal_server_id = int(os.getenv("BAN_APPEALS_GUILD_ID") or 0)
-        self.bot.tree.on_error = on_tree_error
+        
+    async def cog_load(self):
+        await reinitialize_buttons(self)
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
@@ -52,6 +55,41 @@ class Unbans(commands.Cog):
             if msg.channel.category.name == 'servers' or msg.channel.name == 'start_here':
                 await self.reattach_report_button(msg)  # if a mod edits one of the report info channels
 
+    async def setup_appeal_button_view(self,
+                                       msg_channel_id: int, msg_id: int, source_msg: discord.Message = None,
+                                       to_edit_msg: discord.Message = None) -> discord.Message:
+        """Sets up the view for the ban appeal button"""
+        if not source_msg:
+            msg = await self.bot.get_channel(msg_channel_id).fetch_message(msg_id)
+        else:
+            msg = source_msg
+            
+        view = hf.RaiView(timeout=0)
+        button = discord.ui.Button(style=discord.ButtonStyle.primary, label="Start ban appeal")
+        view.add_item(button)
+        if msg.channel.name == 'start_here':
+            button.callback = self.main_start_button_callback
+        elif msg.channel.category.name == 'servers':
+            button.callback = self.start_appeal_button_callback
+            
+        if to_edit_msg:
+            sent_msg = await to_edit_msg.edit(view=view)
+        else:
+            invisible_character = "⁣"
+            sent_msg = await msg.channel.send(invisible_character, view=view)
+            
+            # main appeal start button
+            if msg.channel.name == 'start_here':
+                self.bot.db['buttons'].setdefault('main_start_button', {})
+                self.bot.db['buttons']['main_start_button'][sent_msg.channel.id] = sent_msg.id
+            
+            # the appeal start buttons in each server's appeal channel
+            elif msg.channel.category.name == 'servers':
+                self.bot.db['buttons'].setdefault('start_appeal_button', {})
+                self.bot.db['buttons']["start_appeal_button"][sent_msg.channel.id] = sent_msg.id
+                
+        return sent_msg
+    
     async def reattach_report_button(self, msg: discord.Message):
         """Called if a mod sends a message in the report info channel.
 
@@ -60,17 +98,7 @@ class Unbans(commands.Cog):
             if m.author == msg.guild.me:
                 await m.delete()
 
-        view = hf.RaiView(timeout=0)
-        button = discord.ui.Button(style=discord.ButtonStyle.primary, label="Start ban appeal")
-        view.add_item(button)
-
-        if msg.channel.name == 'start_here':
-            button.callback = self.main_start_button_callback
-        elif msg.channel.category.name == 'servers':
-            button.callback = self.start_appeal_button_callback
-
-        invisible_character = "⁣"
-        await msg.channel.send(invisible_character, view=view)
+        await self.setup_appeal_button_view(msg.channel.id, msg.id, source_msg=msg)
 
     async def main_start_button_callback(self, button_interaction: discord.Interaction):
         """Perform the following steps
