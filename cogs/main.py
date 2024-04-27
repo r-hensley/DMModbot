@@ -15,14 +15,14 @@ class Main(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         print("Bot loaded")
-        self.log_channel = self.bot.get_channel(int(os.getenv("LOG_CHANNEL_ID")))
-        self.error_channel = self.bot.get_channel(int(os.getenv("ERROR_CHANNEL_ID")))
+        self.bot.log_channel = self.bot.get_channel(int(os.getenv("LOG_CHANNEL_ID")))
+        self.bot.error_channel = self.bot.get_channel(int(os.getenv("ERROR_CHANNEL_ID")))
 
-        await self.log_channel.send('Bot loaded')
+        await self.bot.log_channel.send('Bot loaded')
         await self.bot.change_presence(activity=discord.Game('DM me to talk to mods'))
 
         if not hasattr(self, "recently_in_report_room"):
-            self.recently_in_report_room = {}
+            self.bot.recently_in_report_room = {}
             
         # for thread_info in self.db['reports'].values():
         #     report_channel = self.get_channel(thread_info['thread_id'])
@@ -36,8 +36,6 @@ class Main(commands.Cog):
         
         if 'reports' not in self.bot.db:
             self.bot.db['reports'] = {}
-            
-        await hf.reinitialize_buttons()
     
     @commands.Cog.listener()
     async def on_error(self, event: str, *args, **kwargs):

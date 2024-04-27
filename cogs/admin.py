@@ -79,28 +79,24 @@ async def reinitialize_buttons(admin):
     # 'main_start_button': {985967093411368981: 1233600929740230667}
     # }
     for button_name, button_dict in admin.bot.db['buttons'].items():
-        # if button_name == 'start_appeal_button':
-        #     for channel_id, msg_id in button_dict.items():
-        #         await unbans.setup_appeal_button_view(channel_id, msg_id)
-        
         if button_name == 'report_button':
             for channel_id, msg_id in button_dict.items():
                 await admin.setup_report_button_view(channel_id, msg_id)
         
-        # elif button_name == 'main_start_button':
-        #     for channel_id, msg_id in button_dict.items():
-        #         await unbans.setup_appeal_button_view(channel_id, msg_id)
-
-
+        
 class Admin(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: commands.Bot = bot
         
     async def cog_load(self):
-        await reinitialize_buttons(self)
+        hf.asyncio_task(reinitialize_buttons(self))
 
     async def cog_check(self, ctx):
         return is_admin(ctx)
+
+    # @commands.Cog.listener()
+    # async def on_ready(self):
+    #     await reinitialize_buttons(self)
 
     @commands.command()
     async def clear(self, ctx):
@@ -226,6 +222,7 @@ class Admin(commands.Cog):
                 pass
     
     async def report_button_callback(self, button_interaction: discord.Interaction):
+        # noinspection PyTypeChecker
         cog: Modbot = self.bot.get_cog("Modbot")
         try:
             await button_interaction.user.create_dm()
@@ -287,7 +284,7 @@ class Admin(commands.Cog):
     @app_commands.guilds(SP_SERV_ID, RY_TEST_SERV_ID)
     async def create_report_button(self, interaction: discord.Interaction):
         """Creates a report button in the current channel"""
-        await self.setup_report_button_view(interaction.channel)
+        await self.setup_report_button_view(interaction.channel.id)
         await interaction.response.send_message("I've created the message", ephemeral=True)
 
     @app_commands.command()

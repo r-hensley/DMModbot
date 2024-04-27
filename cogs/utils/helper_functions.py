@@ -927,8 +927,8 @@ async def send_to_test_channel(*content, debug=True):
 
 # create a command to run asyncio.create_task(),
 # and then add "add_done_callback" to it that calls exceptions from send_error_embed()
-def asyncio_task(func, *args, **kwargs):
-    task = asyncio.create_task(func(*args, **kwargs))
+def asyncio_task(func):
+    task = asyncio.create_task(func)
     task.add_done_callback(asyncio_task_done_callback)
     
 
