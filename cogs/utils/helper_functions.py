@@ -414,7 +414,7 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message,
                                         desired_chars: int = 150,
                                         ban_appeal: bool = False):
     """This will keep doing async wait_for and adding to the message until the message reaches the desired length."""
-    debug = True  # enable debug prints
+    debug = False  # enable debug prints
     original_user_text, default_text = report_entry_message.content.split(f"\nThe user ")
     if not default_text:
         return
@@ -471,12 +471,14 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message,
 
             # Delete ">>> <@\d{17,22}>" from beginning of candidate_text
             candidate_text = candidate_text.replace(r'>>> : ', '')
-
+            
             # check if new_user_text ends with some kind of punctuation
-            if new_user_text[-1] in ",.!?\n":
-                new_user_text = new_user_text[:-2] + f" {candidate_text}"
+            if not new_user_text:
+                new_user_text = candidate_text
+            elif new_user_text[-1] in ",.!?":
+                new_user_text = new_user_text + f" {candidate_text}"
             else:
-                new_user_text = new_user_text[:-2] + f". {candidate_text}"
+                new_user_text = new_user_text + f". {candidate_text}"
 
             # try fetching thread again to get its current status
             # if archived, stop trying to edit the message
@@ -498,6 +500,7 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message,
                 else:
                     new_content = f"{preface_text}**{new_user_text}**\n{default_text}"
                     await report_entry_message.edit(content=new_content)
+
 
 async def log_record_of_report(thread: discord.Thread, author: discord.User):
     """This will log a record of a report in the database under
@@ -625,7 +628,7 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
         
         # error in PyCharm IDE, it wants me to put "await", but that would block the code
         # noinspection PyAsyncCall
-        asyncio.create_task(wait_for_further_info_from_op(report_thread.starter_message, 150, ban_appeal))
+        asyncio_task(wait_for_further_info_from_op(report_thread.starter_message, 150, ban_appeal))
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
         await try_add_reaction(entry_message, "❗")
@@ -933,10 +936,8 @@ def asyncio_task(func):
     
 
 def asyncio_task_done_callback(task):
-    print(f"Task {task.get_coro().__qualname__} done.")
     if task.exception():
-        print("Error")
         # Create a new task for the asynchronous function
         asyncio.create_task(send_error_embed(here.bot, task.get_coro().__qualname__, task.exception()))
     else:
-        print(f"Task {task.get_coro().__qualname__} completed successfully.")
+
