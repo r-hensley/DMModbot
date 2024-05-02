@@ -15,6 +15,8 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers import lsa
 
+from cogs.utils.BotUtils import bot_utils as utils
+
 here = sys.modules[__name__]
 here.bot = None
 here.loop = None
@@ -79,93 +81,6 @@ class EndEarly(Exception):
     pass
 
 
-async def send_error_embed(bot: discord.Client,
-                           ctx_or_event: Union[commands.Context, discord.Interaction, str],
-                           error: BaseException,
-                           *args, **kwargs):
-    # command or interaction
-    if isinstance(ctx_or_event, (commands.Context, discord.Interaction)):
-        ctx = ctx_or_event
-        msg = ctx.message
-        
-        try:
-            qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
-        except AttributeError:  # ctx.command.name is also None
-            qualified_name = "Non-command"
-        e = discord.Embed(title='Command Error', colour=0xcc3366)
-        e.add_field(name='Name', value=qualified_name)
-        
-        fmt = f'Channel: {ctx.channel} (ID: {ctx.channel.id})'
-        if ctx.guild:
-            fmt = f'{fmt}\nGuild: {ctx.guild} (ID: {ctx.guild.id})'
-        e.add_field(name='Location', value=fmt, inline=False)
-    
-    # event
-    else:
-        ctx = None
-        event = ctx_or_event
-        msg = None
-
-        qualified_name = event
-        e = discord.Embed(title='Event Error', colour=0xa32952)
-        e.add_field(name='Event', value=event)
-        e.description = f'```py\n{traceback.format_exc()}\n```'
-        e.timestamp = discord.utils.utcnow()
-        
-        args_str = ['```py']
-        for index, arg in enumerate(args):
-            # print(type(arg))
-            args_str.append(f'[{index}]: {arg!r}')
-            if type(arg) == discord.Message:
-                msg = arg
-                
-        args_str.append('```')
-        e.add_field(name='Args', value='\n'.join(args_str), inline=False)
-        # await self.error_channel.send(jump_url, embed=e)
-        # traceback.print_exc()
-        
-    if msg:
-        e.add_field(name="Author", value=f'{msg.author} (ID: {msg.author.id})')
-        e.add_field(name="Message Content", value=f'```{msg.content[:1024-6]}```', inline=False)
-
-        jump_url = msg.jump_url
-    else:
-        jump_url = ""
-        
-    # error = getattr(error, 'original', error)
-    # try:
-    #     qualified_name = getattr(ctx.command, 'qualified_name', ctx.command.name)
-    # except AttributeError:  # ctx.command.name is also None
-    #     qualified_name = "Non-command"
-    
-    traceback.print_tb(error.__traceback__)
-    print(discord.utils.utcnow())
-    print(f'Error in {qualified_name}:', file=sys.stderr)
-    print(f'{error.__class__.__name__}: {error}', file=sys.stderr)
-
-    exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
-    
-    if ctx:
-        if ctx.message:
-            traceback_text = f'{ctx.message.jump_url}\n```py\n{exc}```'
-        elif ctx.channel:
-            traceback_text = f'{ctx.channel.mention}\n```py\n{exc}```'
-        else:
-            traceback_text = f'```py\n{exc}```'
-    elif jump_url:
-        traceback_text = f'{jump_url}\n```py\n{exc}```'
-    else:
-        traceback_text = f'```py\n{exc}```'
-
-    e.timestamp = discord.utils.utcnow()
-    traceback_logging_channel = int(os.getenv("ERROR_CHANNEL_ID"))
-    view = None
-    if getattr(ctx, "message", None):
-        view = RaiView.from_message(ctx.message)
-    await bot.get_channel(traceback_logging_channel).send(traceback_text[-2000:], embed=e, view=view)
-    print('')
-
-
 class RaiView(discord.ui.View):
     """A view that will be used to display errors in the traceback logging channel."""
 
@@ -192,7 +107,7 @@ class RaiView(discord.ui.View):
         if interaction.extras:
             e.add_field(name="Extras", value=f"```{interaction.extras}```")
 
-        await send_error_embed(interaction.client, interaction, error, e)
+        await utils.send_error_embed(interaction.client, interaction, error, e)
 
 
 def make_tags_list_for_forum_post(forum: discord.ForumChannel, add: list[str] = None, remove: list[str] = None):
@@ -471,7 +386,7 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message,
 
             # Delete ">>> <@\d{17,22}>" from beginning of candidate_text
             candidate_text = candidate_text.replace(r'>>> : ', '')
-            
+
             # check if new_user_text ends with some kind of punctuation
             if not new_user_text:
                 new_user_text = candidate_text
@@ -525,10 +440,7 @@ async def log_record_of_report(thread: discord.Thread, author: discord.User):
     if not thread_text:
         pass
     elif len(thread_text) < 250:
-        summary = summarize(thread_text, language="english", sentences_count=1)
-        if summary:
-            summary = str(summary[0]).replace('\n', '. ')
-            thread_info['summary'] = summary
+        thread_info['summary'] = thread_text.replace('\n', '. ')
     else:
         if hasattr(here.bot, "eden"):
             if not here.bot.eden:
@@ -628,7 +540,7 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
         
         # error in PyCharm IDE, it wants me to put "await", but that would block the code
         # noinspection PyAsyncCall
-        asyncio_task(wait_for_further_info_from_op(report_thread.starter_message, 150, ban_appeal))
+        utils.asyncio_task(wait_for_further_info_from_op, report_thread.starter_message, 150, ban_appeal)
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
         await try_add_reaction(entry_message, "❗")
@@ -928,16 +840,20 @@ async def send_to_test_channel(*content, debug=True):
             print("Failed to send content to test_channel in send_to_test_channel()")
 
 
+# # create a command to run asyncio.create_task(),
+# # and then add "add_done_callback" to it that calls exceptions from send_error_embed()
+# def asyncio_task(func):
+#     task = asyncio.create_task(func)
+#     task.add_done_callback(asyncio_task_done_callback)
+#
+#
+# def asyncio_task_done_callback(task):
+#     print(f"Task {task.get_coro().__qualname__} done.")
+#     if task.exception():
+#         print("Error")
+#         # Create a new task for the asynchronous function
+#         asyncio.create_task(send_error_embed(here.bot, task.get_coro().__qualname__, task.exception()))
+#     else:
+#         print(f"Task {task.get_coro().__qualname__} completed successfully.")
 # create a command to run asyncio.create_task(),
 # and then add "add_done_callback" to it that calls exceptions from send_error_embed()
-def asyncio_task(func):
-    task = asyncio.create_task(func)
-    task.add_done_callback(asyncio_task_done_callback)
-    
-
-def asyncio_task_done_callback(task):
-    if task.exception():
-        # Create a new task for the asynchronous function
-        asyncio.create_task(send_error_embed(here.bot, task.get_coro().__qualname__, task.exception()))
-    else:
-

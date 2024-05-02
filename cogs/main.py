@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 import sys
 
-from .utils import helper_functions as hf
+from cogs.utils.BotUtils import bot_utils as utils
 
 
 class Main(commands.Cog):
@@ -50,7 +50,7 @@ class Main(commands.Cog):
         # error = error_info[0](error_info[1]).with_traceback(error_info[2])
         
         # Use the send_error_embed function
-        await hf.send_error_embed(self.bot, event, error_info[1], args, kwargs)
+        await utils.send_error_embed(self.bot, event, error_info[1], args, kwargs)
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
@@ -142,7 +142,7 @@ class Main(commands.Cog):
             await ctx.send(f"Only Ryan can do that.")
             return
         
-        await hf.send_error_embed(self.bot, ctx, error)
+        await utils.send_error_embed(self.bot, ctx, error)
         
         
 async def setup(bot: commands.Bot):
@@ -167,4 +167,4 @@ async def on_tree_error(interaction: discord.Interaction, error: discord.app_com
     if interaction.extras:
         e.add_field(name="Extras", value=f"```{interaction.extras}```")
 
-    await hf.send_error_embed(interaction.client, interaction, error, e)
+    await utils.send_error_embed(interaction.client, interaction, error, e)

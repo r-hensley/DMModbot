@@ -9,6 +9,7 @@ from .owner import dump_json
 from .modbot import Modbot
 from .utils.db_utils import get_thread_id_to_thread_info
 from .utils import helper_functions as hf
+from cogs.utils.BotUtils import bot_utils as utils
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -78,9 +79,11 @@ async def reinitialize_buttons(admin):
     # 'report_button': {554572239836545074: 1233599933563666462, 774660366620950538: 1233601399024124026},
     # 'main_start_button': {985967093411368981: 1233600929740230667}
     # }
+    await admin.bot.wait_until_ready()
     for button_name, button_dict in admin.bot.db['buttons'].items():
         if button_name == 'report_button':
             for channel_id, msg_id in button_dict.items():
+                print(f"Setting up report button for {channel_id=}, {msg_id=}")
                 await admin.setup_report_button_view(channel_id, msg_id)
         
         
@@ -89,7 +92,7 @@ class Admin(commands.Cog):
         self.bot: commands.Bot = bot
         
     async def cog_load(self):
-        hf.asyncio_task(reinitialize_buttons(self))
+        utils.asyncio_task(reinitialize_buttons, self)
 
     async def cog_check(self, ctx):
         return is_admin(ctx)
@@ -113,7 +116,7 @@ class Admin(commands.Cog):
     async def setup(self, ctx, secondary: str = ""):
         """Sets the current channel as the report room, or resets the report module.
 
-        Type `_setup secondary` to setup a secondary report room for users who have
+        Type `_setup secondary` to set up a secondary report room for users who have
         just questions about the server in general rather than reports. Consider opening
         this room up to a group of server helpers rather than the main mods only."""
         guilds = self.bot.db['guilds']

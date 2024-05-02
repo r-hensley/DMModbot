@@ -5,6 +5,7 @@ from discord.ext import commands
 
 from .modbot import Modbot
 from .utils import helper_functions as hf
+from cogs.utils.BotUtils import bot_utils as utils
 
 RYRY_ID = 202995638860906496
 TEST_SERVER_ID = 275146036178059265
@@ -47,7 +48,7 @@ class Unbans(commands.Cog):
         self.ban_appeal_server_id = int(os.getenv("BAN_APPEALS_GUILD_ID") or 0)
     
     async def cog_load(self):
-        hf.asyncio_task(reinitialize_buttons(self))
+        utils.asyncio_task(reinitialize_buttons, self)
     
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
@@ -63,7 +64,6 @@ class Unbans(commands.Cog):
                                        msg_channel_id: int, msg_id: int = None) -> discord.Message:
         """Sets up the view for the ban appeal button"""
         channel = self.bot.get_channel(msg_channel_id)
-        print(channel, type(msg_channel_id))
         if msg_id:
             try:
                 msg = await channel.fetch_message(msg_id)

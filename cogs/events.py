@@ -4,6 +4,7 @@ from discord.ext import commands
 from .unbans import Unbans
 from .admin import Admin
 
+
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
