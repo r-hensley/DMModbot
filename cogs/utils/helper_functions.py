@@ -330,7 +330,14 @@ async def wait_for_further_info_from_op(report_entry_message: discord.Message,
                                         ban_appeal: bool = False):
     """This will keep doing async wait_for and adding to the message until the message reaches the desired length."""
     debug = False  # enable debug prints
-    original_user_text, default_text = report_entry_message.content.split(f"\nThe user ")
+    text = report_entry_message.content.split(f"\nThe user ")
+    if len(text) == 1:
+        original_user_text, default_text = "", text[0]
+    elif len(text) == 2:
+        original_user_text, default_text = text
+    else:
+        raise ValueError("Unknown format of report_entry_message content")
+
     if not default_text:
         return
     default_text = "\nThe user " + default_text
@@ -762,8 +769,11 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
     view.add_item(cancel_button)
 
     async def on_timeout():
-        await q_msg.edit(content="I did not receive a response from you. Please try to send your "
-                                 "message again", view=None)
+        try:
+            await q_msg.edit(content="I did not receive a response from you. Please try to send your "
+                                     "message again", view=None)
+        except discord.NotFound:
+            pass
 
     view.on_timeout = on_timeout
 
