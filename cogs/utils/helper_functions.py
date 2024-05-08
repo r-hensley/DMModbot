@@ -192,7 +192,7 @@ async def try_add_reaction(msg, emoji):
     """This will try to add a reaction to a message, and if it fails, it will ignore the error."""
     try:
         await msg.add_reaction(emoji)
-    except [discord.HTTPException, discord.Forbidden, discord.NotFound]:
+    except (discord.HTTPException, discord.Forbidden, discord.NotFound):
         pass
 
 
@@ -606,7 +606,7 @@ async def new_user_role_request_denial(guild: discord.Guild, ban_appeal, author:
                    f"I assumed they were asking for language tag, so I told them to state their " \
                    f"native language in JHO and blocked their request to open the report room."
             await meta_channel.send(embed=discord.Embed(description=text, color=0xFF0000))
-            return
+            raise EndEarly
 
     # #### SPECIAL STUFF FOR SP SERVER ####
     # Turn away new users asking for a role
@@ -629,7 +629,7 @@ async def new_user_role_request_denial(guild: discord.Guild, ban_appeal, author:
                    f"I assumed they were asking how to access the server, so I told them to get a native " \
                    f"language in the newcomers channels and blocked their request to open the report room."
             await meta_channel.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
-            return
+            raise EndEarly
 
 
 async def get_report_variables(guild, main_or_secondary, author):

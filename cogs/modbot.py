@@ -384,7 +384,10 @@ class Modbot(commands.Cog):
         await hf.check_bot_perms(report_channel, meta_channel, guild, author)
 
         # Deny users who come to the bot without language roles (they're probably asking how to get roles)
-        await hf.new_user_role_request_denial(guild, ban_appeal, author, msg, meta_channel)
+        try:
+            await hf.new_user_role_request_denial(guild, ban_appeal, author, msg, meta_channel)
+        except hf.EndEarly:
+            return
 
         # ##### START THE ROOM #######
         async def open_room():
