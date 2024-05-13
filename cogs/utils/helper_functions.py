@@ -544,10 +544,19 @@ async def create_report_thread(author: discord.User, msg: discord.Message,
         report_thread = (await report_channel.create_thread(name=thread_name,
                                                             content=f"{entry_text}\n{thread_text}",
                                                             applied_tags=tags_to_add)).thread
-        
-        # error in PyCharm IDE, it wants me to put "await", but that would block the code
-        # noinspection PyAsyncCall
-        utils.asyncio_task(wait_for_further_info_from_op, report_thread.starter_message, 150, ban_appeal)
+
+        if not report_thread.starter_message:
+            try:
+                starter_message = await report_thread.fetch_message(report_thread.id)
+            except (discord.NotFound, discord.HTTPException):
+                starter_message = None
+        else:
+            starter_message = report_thread.starter_message
+
+        if starter_message:
+            # error in PyCharm IDE, it wants me to put "await", but that would block the code
+            # noinspection PyAsyncCall
+            utils.asyncio_task(wait_for_further_info_from_op, report_thread.starter_message, 150, ban_appeal)
     else:
         entry_message: Optional[discord.Message] = await report_channel.send(entry_text)
         await try_add_reaction(entry_message, "❗")
