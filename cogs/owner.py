@@ -16,7 +16,7 @@ from discord.ext import commands
 
 from .utils.db_utils import int_keys_to_str_keys
 from .utils import helper_functions as hf
-# from cogs.utils.BotUtils import bot_utils as utils
+from cogs.utils.BotUtils import bot_utils as utils
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -101,24 +101,31 @@ class Owner(commands.Cog):
 
     @commands.command(hidden=True)
     async def reload(self, ctx, *, cogs: str):
-        # try:
-        #     await ctx.message.delete()
-        # except discord.Forbidden:
-        #     pass
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            pass
         for cog in cogs.split():
+            if cog == 'database':
+                importlib.reload(sys.modules['cogs.database'])
             if cog in ['hf', 'helper_function']:
                 try:
-                    old_module = sys.modules['cogs.utils.helper_functions']
                     importlib.reload(sys.modules['cogs.utils.helper_functions'])
                     hf.setup(bot=self.bot, loop=asyncio.get_event_loop())  # this is to define here.bot in the hf file
                 except Exception as e:
-                    await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
+                    await utils.safe_send(ctx, f'**`ERROR:`** {type(e).__name__} - {e}')
                 else:
-                    # await ctx.send(f'**`{cog}: SUCCESS`**', delete_after=5.0)
-                    try:
-                        await ctx.message.add_reaction('✅')
-                    except [discord.Forbidden, discord.HTTPException]:
-                        pass
+                    await utils.safe_send(ctx, f'**`{cog}: SUCCESS`**', delete_after=5.0)
+
+            elif cog == 'utils':
+                # reload file in cogs/utils/BotUtils/bot_utils.py
+                try:
+                    importlib.reload(sys.modules['cogs.utils.BotUtils.bot_utils'])
+                    utils.setup(bot=self.bot, loop=asyncio.get_event_loop())
+                except Exception as e:
+                    await utils.safe_send(ctx, f'**`ERROR:`** {type(e).__name__} - {e}')
+                else:
+                    await utils.safe_send(ctx, f'**`{cog}: SUCCESS`**', delete_after=5.0)
 
             else:
                 try:
@@ -127,13 +134,9 @@ class Owner(commands.Cog):
                         sync = self.bot.get_command('sync')
                         await ctx.invoke(sync)
                 except Exception as e:
-                    await ctx.send(f'**`ERROR:`** {type(e).__name__} - {e}')
+                    await utils.safe_send(ctx, f'**`ERROR:`** {type(e).__name__} - {e}')
                 else:
-                    # await ctx.send(f' **`{cog}: SUCCESS`**', delete_after=5.0)
-                    try:
-                        await ctx.message.add_reaction('✅')
-                    except [discord.Forbidden, discord.HTTPException]:
-                        pass
+                    await utils.safe_send(ctx, f' **`{cog}: SUCCESS`**', delete_after=5.0)
 
     @staticmethod
     def cleanup_code(content):
