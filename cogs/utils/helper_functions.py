@@ -653,13 +653,14 @@ async def get_report_variables(guild, main_or_secondary, author):
     if isinstance(report_channel, discord.ForumChannel):
         # a pinned post in forum where I can send info messages
         meta_channel_id = here.bot.db['guilds'][guild.id].get('meta_channel')
-        if main_or_secondary == 'secondary':
-            meta_channel_id = here.bot.db['guilds'][guild.id].get('secondary_meta_channel')
-        if not meta_channel_id:
-            await author.send("The report room for this server is not properly setup. Please directly message "
-                              "the mods. (I can't find the ID for the channel to send info messages in)")
-            raise EndEarly
-
+        if 'secondary_channel' in guild_config:
+            if main_or_secondary == 'secondary':
+                meta_channel_id = guild_config.get('secondary_meta_channel')
+            if not meta_channel_id:
+                await author.send("The report room for this server is not properly setup. Please directly message "
+                                  "the mods. (I can't find the ID for the channel to send info messages in)")
+                raise EndEarly
+        
         meta_channel = report_channel.get_thread(meta_channel_id)
         if not meta_channel:
             await author.send("The report room for this server is not properly setup. Please directly message "
@@ -755,11 +756,11 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
         locale = button_interaction.locale
         here.bot.db['user_localizations'][author.id] = str(locale)
         await q_msg.delete()
-        first_msg_conf = {"en": "I will send your first message. "
+        first_msg_conf = {"en": "I will try to send your first message. "
                                 "Make sure all the messages you send receive a '📨' reaction.",
-                          "es": "Enviaré tu primer mensaje. "
+                          "es": "Intentaré enviar tu primer mensaje. "
                                 "Asegúrate de que todos los mensajes que envíes reciban una reacción '📨'.",
-                          "ja": "あなたの最初のメッセージを送信しました。"
+                          "ja": "あなたの最初のメッセージを送信してみます。"
                                 "送信するすべてのメッセージが '📨' のリアクションが付くことを確認してください。"}
         conf_txt = first_msg_conf.get(str(locale)[:2], first_msg_conf['en'])
         await button_interaction.response.send_message(conf_txt, ephemeral=True)
