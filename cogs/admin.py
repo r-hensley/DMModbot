@@ -231,6 +231,12 @@ class Admin(commands.Cog):
             await button_interaction.user.create_dm()
         except discord.Forbidden:
             await button_interaction.response.send_message("I was unable to send you a DM message", ephemeral=True)
+            
+        # check if user already has an open report in self.bot.db['reports']
+        if button_interaction.user.id in self.bot.db['reports']:
+            await button_interaction.response.send_message("You already have an open report. Please finish that one "
+                                                           "before starting a new one.", ephemeral=True)
+            return
         
         # create a link to bring user to their own DM, it will look like this
         # https://discord.com/channels/@me/713269937556291696/9999999999999999999
