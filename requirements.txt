@@ -1,5 +1,5 @@
 # https://github.com/aio-libs/aiohttp/security/advisories/GHSA-v6wp-4m6f-gcjg
-aiohttp >= 3.7.4
+aiohttp
 aiosignal
 async-timeout
 attrs
@@ -14,4 +14,7 @@ mypy-extensions
 tomli
 typing-extensions
 yarl
-python-dotenv~=0.20.0
+python-dotenv
+sumy
+
+emoji
