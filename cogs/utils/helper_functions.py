@@ -656,11 +656,11 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
     user_locale = get_user_locale(author.id)
     report_button = discord.ui.Button(label=report_str.get(user_locale) or report_str['en'],
                                       style=discord.ButtonStyle.primary, row=1)
-    account_q_button = discord.ui.Button(label=account_q_str.get(user_locale) or report_str['en'],
+    account_q_button = discord.ui.Button(label=account_q_str.get(user_locale) or account_q_str['en'],
                                          style=discord.ButtonStyle.primary, row=2)
-    server_q_button = discord.ui.Button(label=server_q_str.get(user_locale) or report_str['en'],
+    server_q_button = discord.ui.Button(label=server_q_str.get(user_locale) or server_q_str['en'],
                                         style=discord.ButtonStyle.secondary, row=3)
-    cancel_button = discord.ui.Button(label=cancel_str.get(user_locale) or report_str['en'],
+    cancel_button = discord.ui.Button(label=cancel_str.get(user_locale) or cancel_str['en'],
                                       style=discord.ButtonStyle.red, row=4)
 
     if not author.dm_channel:
