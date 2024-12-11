@@ -214,12 +214,14 @@ class Unbans(commands.Cog):
                                                            "down. Please try again later.", ephemeral=True)
             return
         
+        # Check if guild report room is set up properly
         if guild_id not in self.bot.db['guilds']:
             await button_interaction.response.send_message("The server has not properly setup their modbot room. The "
                                                            "moderators should type `_setup` in some channel on their "
                                                            "main server.")
             return
         
+        # Create DM channel
         dm_channel = button_interaction.user.dm_channel
         if not dm_channel:
             try:
@@ -229,7 +231,21 @@ class Unbans(commands.Cog):
         dm_channel_link = ''
         if dm_channel:
             dm_channel_link = f":\n{dm_channel.jump_url}"
+            
+        # check if I can DM the user
+        try:
+            await button_interaction.user.send(None)  # purposely send "None"
+        except discord.Forbidden:
+            # Forbidden: 403 Forbidden (error code: 50007): Cannot send messages to this user
+            error_text = ("I cannot send you DMs, please enable DMs from non-friends in your privacy settings from "
+                          "this server")
+            await button_interaction.response.send_message(error_text, ephemeral=True)
+            return False  # cannot open DM with user
+        except discord.HTTPException:
+            # HTTPException: 400 Bad Request (error code: 50006): Cannot send an empty message
+            pass  # DM works
         
+        # Start ban appeal process
         self.bot.db['user_localizations'][button_interaction.user.id] = str(locale)
         if str(locale).startswith('es'):
             response_text = f"Esto iniciará una apelación de baneo con {guild.name}. " \
