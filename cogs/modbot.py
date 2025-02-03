@@ -87,11 +87,16 @@ class Modbot(commands.Cog):
         """PM Bot"""
         # This function will handle new users who are not in a report room and trying to start a new report
         if isinstance(msg.channel, discord.DMChannel):  # in a PM
-            if result := await self.receive_new_users(msg):
-                if result == "BLOCKED_USER":
+            if user_status_result := await self.receive_users(msg):
+                if user_status_result == "BLOCKED_USER":
                     await msg.reply("There has been some kind of error in joining that server's report room. Please "
                                     "contact the mods directly.")
-                return  # True if a new user came into the report room
+                if user_status_result in ['AlreadyInReport', 'CurrentlySettingUp', 'RecentlyFinishedReport',
+                                          'UserPassedThrough', "OpeningMessageTooShort"]:
+                    # all these above statuses are expected and should be handled in the receive_users() function
+                    return
+                
+                raise Exception(f"Unhandled user reception status: {user_status_result}")
 
         # sending a message during a report
         # it tries to connect a message to a report and deliver it to the right place (either report room or DM channel)
@@ -105,20 +110,20 @@ class Modbot(commands.Cog):
                 await self.end_report(open_report, error=True)
                 raise
 
-    async def receive_new_users(self, msg: discord.Message):
-        """This function is called whenever a user messages Modbot.
+    async def receive_users(self, msg: discord.Message):
+        """This function is called first whenever any user messages Modbot.
 
         It returns True if the user was not in any report rooms before and successfully admitted into one"""
         # check if they're currently in a report already
         if msg.author.id in list(self.bot.db['reports']):
-            return False
+            return "AlreadyInReport"  # already in a report room somewhere
 
         # check if they're currently in the middle of setting up a report already
         if msg.author.id in self.bot.db['settingup']:
             # if not a number (numbers are probably the user trying to specify which guild they want to connect to)
             if not msg.content.isdigit():
                 await hf.try_add_reaction(msg, "❌")
-            return False
+            return "CurrentlySettingUp"
 
         # then check if user just recently left a report room
         if time_remaining := self.check_if_recently_finished_report(msg):
@@ -126,8 +131,15 @@ class Modbot(commands.Cog):
                 f"You've recently left a report room. Please wait {time_remaining} more seconds before "
                 f"joining again.\nIf your message was something like 'goodbye', 'thanks', or similar, "
                 f"we appreciate it, but it is not necessary to open another room.")
-            return True
-
+            return "RecentlyFinishedReport"
+        
+        # they're not in a report yet, but they should be good to start one
+        if len(msg.content or '') < 15:
+            await msg.author.send("❌❌ I could not start a report. "
+                                  "Please try to describe your issue with more detail ❌❌")
+            return "OpeningMessageTooShort"
+            
+        # at this point they should be cleared to join a new report
         # try to put user into report room
         else:
             guild: discord.Guild
@@ -150,7 +162,7 @@ class Modbot(commands.Cog):
                     # assuming they haven't been blocked, continue here
                     await self.start_report_room(msg.author, guild, msg,
                                                  main_or_secondary, ban_appeal=False)  # bring user to report room
-                return True  # if it worked
+                return "UserPassedThrough"  # if it worked
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
                 raise
