@@ -91,12 +91,14 @@ class Modbot(commands.Cog):
                 if user_status_result == "BLOCKED_USER":
                     await msg.reply("There has been some kind of error in joining that server's report room. Please "
                                     "contact the mods directly.")
-                if user_status_result in ['AlreadyInReport', 'CurrentlySettingUp', 'RecentlyFinishedReport',
-                                          'UserPassedThrough', "OpeningMessageTooShort"]:
-                    # all these above statuses are expected and should be handled in the receive_users() function
+                # all the below statuses are expected and should be handled in the receive_users() function
+                if user_status_result in ['AlreadyInReport', 'CurrentlySettingUp']:
+                    # pass user to "find_current_guild() and potentially send_message()
+                    pass
+                elif user_status_result in ['RecentlyFinishedReport', 'UserPassedThrough', "OpeningMessageTooShort"]:
                     return
-                
-                raise Exception(f"Unhandled user reception status: {user_status_result}")
+                else:
+                    raise Exception(f"Unhandled user reception status: {user_status_result}")
 
         # sending a message during a report
         # it tries to connect a message to a report and deliver it to the right place (either report room or DM channel)
