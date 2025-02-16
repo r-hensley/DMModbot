@@ -195,27 +195,31 @@ class Admin(commands.Cog):
     @commands.command()
     async def send(self, ctx: commands.Context, user_id: int, *, msg: str):
         """Sends a message to the channel ID specified"""
-        channel = self.bot.get_channel(user_id)
-        if not channel:
-            channel = self.bot.get_user(user_id)
-            if not channel:
+        target = self.bot.get_channel(user_id)
+        if not target:
+            target = self.bot.get_user(user_id)
+            if not target:
                 await ctx.send("Invalid ID")
                 return
-            
-        if hasattr(channel, "guild"):
-            if channel.guild != ctx.guild:
+
+        # trying to send to any server channel
+        if hasattr(target, "guild"):
+            if target.guild != ctx.guild:
                 await ctx.send("You can only send messages to channels in this server.")
                 return
-        elif isinstance(channel, discord.User):
-            if channel not in ctx.guild.members:
+
+        # trying to send to a user
+        elif isinstance(target, discord.User):
+            appeal_server = self.bot.get_guild(985963522796183622)
+            if target not in ctx.guild.members and target not in appeal_server.members:
                 await ctx.send("You can only send messages to users in this server.")
                 return
-            
+
         try:
-            await channel.send(f"Message from the mods of {ctx.guild.name}: {msg}")
-        except discord.Forbidden:
+            await target.send(f"Message from the mods of {ctx.guild.name}: {msg}")
+        except discord.Forbidden as e:
             try:
-                await ctx.send(f"I can't send messages to that user.")
+                await ctx.send(f"I can't send messages to that user. {e}")
             except discord.Forbidden:
                 pass
         else:
