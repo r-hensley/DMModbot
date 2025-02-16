@@ -30,7 +30,7 @@ intents.message_content = True
 
 if not os.path.exists(f"{dir_path}/.env"):
     txt = ("# Fill this file with your data\nDEFAULT_PREFIX=_\nBOT_TOKEN=0000\nOWNER_ID=0000\n"
-           "LOG_CHANNEL_ID=0000\nERROR_CHANNEL_ID=0000\nBAN_APPEALS_GUILD_ID=0000\n")
+           "LOG_CHANNEL_ID=0000\nTRACEBACK_LOGGING_CHANNEL=0000\nBAN_APPEALS_GUILD_ID=0000\n")
     with open(f'{dir_path}/.env', 'w') as f:
         f.write(txt)
     raise discord.LoginFailure("I've created a .env file for you, go in there and put your bot token in the file.\n")

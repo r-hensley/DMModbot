@@ -57,9 +57,9 @@ class Unbans(commands.Cog):
         
         ban_appeal_server = self.bot.get_guild(self.ban_appeal_server_id)
         if msg.guild == ban_appeal_server and msg.author != msg.guild.me:
-            if msg.channel.category.name == 'servers' or msg.channel.name == 'start_here':
+            if msg.channel.category.id == 985967149602439198 or msg.channel.id == 985967093411368981:
                 await self.reattach_report_button(msg)  # if a mod edits one of the report info channels
-    
+
     async def setup_appeal_button_view(self,
                                        msg_channel_id: int, msg_id: int = None) -> discord.Message:
         """Sets up the view for the ban appeal button"""
@@ -72,7 +72,7 @@ class Unbans(commands.Cog):
         else:
             msg = None
         
-        view = hf.RaiView(timeout=0)
+        view = utils.RaiView(timeout=0)
         button = discord.ui.Button(style=discord.ButtonStyle.primary, label="Start ban appeal")
         view.add_item(button)
         if channel.name == 'start_here':
@@ -269,7 +269,7 @@ class Unbans(commands.Cog):
         
         confirmation_button = discord.ui.Button(label=confirmation_text)
         cancellation_button = discord.ui.Button(label=cancelation_text)
-        view = hf.RaiView()
+        view = utils.RaiView()
         view.add_item(confirmation_button)
         view.add_item(cancellation_button)
         

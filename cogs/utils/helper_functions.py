@@ -42,35 +42,6 @@ class EndEarly(Exception):
     pass
 
 
-class RaiView(discord.ui.View):
-    """A view that will be used to display errors in the traceback logging channel."""
-
-    async def on_error(self,
-                       interaction: discord.Interaction,
-                       error: Exception,
-                       item: Union[discord.ui.Button, discord.ui.Select, discord.ui.TextInput]):
-        """This is called when an error occurs in a view component."""
-        e = discord.Embed(title=f'View Component Error ({str(item.type)})', colour=0xcc3366)
-        e.add_field(name='Interaction User', value=f"{interaction.user} ({interaction.user.mention})")
-
-        fmt = f'Channel: {interaction.channel} (ID: {interaction.channel.id})'
-        if interaction.guild:
-            fmt = f'{fmt}\nGuild: {interaction.guild} (ID: {interaction.guild.id})'
-
-        e.add_field(name='Location', value=fmt, inline=False)
-
-        if hasattr(item, "label"):
-            e.add_field(name="Item label", value=item.label)
-
-        if interaction.data:
-            e.add_field(name="Data", value=f"```{interaction.data}```", inline=False)
-
-        if interaction.extras:
-            e.add_field(name="Extras", value=f"```{interaction.extras}```")
-
-        await utils.send_error_embed(interaction.client, interaction, error, e)
-
-
 def make_tags_list_for_forum_post(forum: discord.ForumChannel, add: list[str] = None, remove: list[str] = None):
     """This will make a list of tags to add and remove based on the add and remove lists."""
     if not add and not remove:
@@ -640,7 +611,7 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
     txt = (f"Hello, you are trying to start a support ticket/report with "
            f"the mods of {guild.name}.\n\n"
            "**Please push one of the below buttons.**")
-    view = RaiView(timeout=180)
+    view = utils.RaiView(timeout=180)
     report_str = {'en': "I want to report a user",
                   'es': "Quiero reportar a un usuario",
                   'ja': "他のユーザーを通報したい"}

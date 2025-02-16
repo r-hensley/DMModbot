@@ -1,3 +1,4 @@
+import logging
 import os
 
 import discord
@@ -11,12 +12,13 @@ class Main(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
         self.bot.tree.on_error = on_tree_error
+        self.bot.on_error = self.on_error
     
     @commands.Cog.listener()
     async def on_ready(self):
         print("Bot loaded")
         self.bot.log_channel = self.bot.get_channel(int(os.getenv("LOG_CHANNEL_ID")))
-        self.bot.error_channel = self.bot.get_channel(int(os.getenv("ERROR_CHANNEL_ID")))
+        self.bot.error_channel = self.bot.get_channel(int(os.getenv("TRACEBACK_LOGGING_CHANNEL")))
 
         await self.bot.log_channel.send('Bot loaded')
         await self.bot.change_presence(activity=discord.Game('DM me to talk to mods'))
@@ -50,7 +52,7 @@ class Main(commands.Cog):
         # error = error_info[0](error_info[1]).with_traceback(error_info[2])
         
         # Use the send_error_embed function
-        await utils.send_error_embed(self.bot, event, error_info[1], args, kwargs)
+        await utils.send_error_embed(self.bot, event, error_info[1], *args, **kwargs)
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
@@ -150,6 +152,7 @@ async def setup(bot: commands.Bot):
     
 
 async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    print('on tree error')
     qualified_name = getattr(interaction.command, 'qualified_name', interaction.command.name)
     e = discord.Embed(title=f'App Command Error ({interaction.type})', colour=0xcc3366)
     e.add_field(name='Name', value=qualified_name)

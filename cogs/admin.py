@@ -270,7 +270,7 @@ class Admin(commands.Cog):
         button = discord.ui.Button(label=button_text, style=discord.ButtonStyle.primary)
         
         button.callback = self.report_button_callback
-        view = hf.RaiView(timeout=None)
+        view = utils.RaiView(timeout=None)
         view.add_item(button)
         
         channel = self.bot.get_channel(channel_id)
