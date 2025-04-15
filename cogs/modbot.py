@@ -163,7 +163,7 @@ class Modbot(commands.Cog):
 
                     # assuming they haven't been blocked, continue here
                     await self.start_report_room(msg.author, guild, msg,
-                                                 main_or_secondary, ban_appeal=False)  # bring user to report room
+                                                 main_or_secondary)  # bring user to report room
                 return "UserPassedThrough"  # if it worked
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -266,11 +266,12 @@ class Modbot(commands.Cog):
             [g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
 
         appeals_server = self.bot.get_guild(int(os.getenv("BAN_APPEALS_GUILD_ID") or 0))
-        if appeals_server:
-            try:
-                shared_guilds.remove(appeals_server)
-            except ValueError:
-                pass
+        if appeals_server in shared_guilds:
+            if len(shared_guilds) == 1:
+                await msg.channel.send("I couldn't find any common guilds between us besides the ban appeal server, "
+                                       "which doesn't accept DM reports. Have a nice day.")
+                return None, None
+            shared_guilds.remove(appeals_server)
 
         guild: Optional[discord.Guild] = None
         if not guild:
@@ -382,9 +383,61 @@ class Modbot(commands.Cog):
                 return guild, 'secondary'
             else:
                 return None, None
+            
+    async def start_ban_appeal_room(self, author: discord.User, guild: discord.Guild, appeal_text: str, main_or_secondary: str):
+        try:
+            report_channel, meta_channel = await hf.get_report_variables(guild, main_or_secondary, author)
+        except hf.EndEarly:
+            return
+        # Check if the bot has the permissions to send messages in the report channel and create threads.
+        await hf.check_bot_perms(report_channel, meta_channel, guild, author)
+        async def open_room():
+            if not author.dm_channel:
+                await author.create_dm()
+            if isinstance(report_channel, discord.TextChannel):
+                await report_channel.typing()
+
+            await author.dm_channel.typing()
+            await asyncio.sleep(1)
+
+            try:
+                report_thread = await hf.create_report_thread(author, appeal_text, report_channel, ban_appeal=True)
+
+                # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
+                await hf.repost_rai_modlog(report_thread)
+
+                # Send divider to report room splitting information from bot above and actual report messages below
+                invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
+                vertical_space = f"**Report starts here\n__{' ' * 70}__**\n\n\n{invisible_character}"
+                await report_thread.send(vertical_space)
+
+                # add info about user to self.bot.db['reports']
+                await hf.add_report_to_db(author, report_thread)
+
+                # send first message, notify user in DMs that the message successfully sent
+                await hf.deliver_ban_appeal_msg_to_thread(report_thread, author, appeal_text)
+
+            except discord.Forbidden:
+                await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
+                                    "anymore. Please tell them to check the permissions on the channel or to run the"
+                                    " setup command again.")
+                return
+
+            # Send user a message explaining that the connection to the room has been made and explaining roughly
+            # how to use the room. The message can be in English, Spanish, or Japanese depending on the user's locale.
+            await hf.forward_ban_appeal_msg_to_dm(author.dm_channel, appeal_text)
+            await hf.notify_user_of_ban_appeal_connection(author)
+
+        try:
+            await open_room()
+        except Exception:
+            if author.id in self.bot.db['reports']:
+                del self.bot.db['reports'][author.id]
+            await self.notify_end_thread(meta_channel, author.dm_channel, True)
+            raise
 
     async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message],
-                                main_or_secondary: str, ban_appeal=False):
+                                main_or_secondary: str):
         """Performs initial code for bringing a user's first message into the report room and setting up the
         connection between the user and the mods.
 
@@ -399,11 +452,10 @@ class Modbot(commands.Cog):
 
         # Deny users who come to the bot without language roles (they're probably asking how to get roles)
         try:
-            await hf.new_user_role_request_denial(guild, ban_appeal, author, msg, meta_channel)
+            await hf.deny_new_user_role_request(guild, author, msg, meta_channel)
         except hf.EndEarly:
             return
 
-        # ##### START THE ROOM #######
         async def open_room():
             if not author.dm_channel:
                 await author.create_dm()
@@ -414,7 +466,7 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                report_thread = await hf.create_report_thread(author, msg, report_channel, ban_appeal)
+                report_thread = await hf.create_report_thread(author, msg.content, report_channel, ban_appeal=False)
 
                 # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
                 await hf.repost_rai_modlog(report_thread)
@@ -428,27 +480,26 @@ class Modbot(commands.Cog):
                 await hf.add_report_to_db(author, report_thread)
 
                 # send first message, notify user in DMs that the message successfully sent
-                await hf.deliver_first_report_msg(report_thread, ban_appeal, author, msg)
+                await hf.deliver_first_report_msg_to_thread(report_thread, author, msg)
 
             except discord.Forbidden:
                 await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
                                   "anymore. Please tell them to check the permissions on the channel or to run the"
                                   " setup command again.")
-                return True
+                return
 
             # Send user a message explaining that the connection to the room has been made and explaining roughly
             # how to use the room. The message can be in English, Spanish, or Japanese depending on the user's locale.
-            await hf.notify_user_of_report_connection(author, ban_appeal)
+            await hf.notify_user_of_report_connection(author)
 
         try:
-            await open_room()  # maybe this should always be True
+            await open_room()
         except Exception:
             if author.id in self.bot.db['reports']:
                 del self.bot.db['reports'][author.id]
             await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
-    """Send message"""
 
     async def send_message(self, msg: discord.Message, open_report: OpenReport):
         # ignore messages starting with _ or other bot prefixes, also ignore all bot messages

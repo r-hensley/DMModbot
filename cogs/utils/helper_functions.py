@@ -120,6 +120,10 @@ async def repost_rai_modlog(report_thread: discord.Thread):
     asyncio.create_task(_pre_repost_rai_modlog(report_thread))
 
 
+def partition_text(text: str, length: int):
+    return list(text[0+i:length+i] for i in range(0, len(text), length))
+
+
 async def try_add_reaction(msg, emoji):
     """This will try to add a reaction to a message, and if it fails, it will ignore the error."""
     try:
@@ -128,78 +132,94 @@ async def try_add_reaction(msg, emoji):
         pass
 
 
-async def deliver_first_report_msg(report_thread: discord.Thread,
-                                   ban_appeal,
-                                   author: discord.User,
-                                   msg: Optional[discord.Message] = None):
+async def deliver_ban_appeal_msg_to_thread(report_thread: discord.Thread, 
+                                           author: discord.User,
+                                           appeal_text: str):
+    section_prefix = f">>> {author.mention}: "
+    partitioned_text = partition_text(appeal_text, 2000 - len(section_prefix))
+    for section in partitioned_text:
+        await report_thread.send(f"{section_prefix}{section}")
+
+
+async def forward_ban_appeal_msg_to_dm(dm_channel: discord.DMChannel, appeal_text: str):
+    await dm_channel.send("### Your Appeal:")
+    section_prefix = f">>> "
+    partitioned_text = partition_text(appeal_text, 2000 - len(section_prefix))
+    for section in partitioned_text:
+        await dm_channel.send(f"{section_prefix}{section}")
+
+
+async def deliver_first_report_msg_to_thread(
+        report_thread: discord.Thread,
+        author: discord.User,
+        msg: Optional[discord.Message] = None):
     """This will deliver the first message of a report to the report thread from the user,
     and then in the DM channel, add a reaction to the message to indicate that it has been delivered."""
-    if not ban_appeal and msg:
-        user_text = f">>> {author.mention}: {msg.content}"
-        if len(user_text) > 2000:
-            await report_thread.send(user_text[:2000])
-            await report_thread.send(user_text[2000:])
-        else:
-            await report_thread.send(user_text)
-        await try_add_reaction(msg, "📨")
-        await try_add_reaction(msg, "✅")
-        if msg.attachments:
-            for attachment in msg.attachments:
-                await report_thread.send(f">>> {attachment.url}")
-        if msg.embeds:
-            await report_thread.send(embed=msg.embeds[0])
     if not msg:
         await report_thread.send("NOTE: The user has not sent a message yet.")
+        return
+    section_prefix = f">>> {author.mention}: "
+    partitioned_text = partition_text(msg.content, 2000 - len(section_prefix))
+    for section in partitioned_text:
+        await report_thread.send(f"{section_prefix}{section}")
+    await try_add_reaction(msg, "📨")
+    await try_add_reaction(msg, "✅")
+    if msg.attachments:
+        for attachment in msg.attachments:
+            await report_thread.send(f">>> {attachment.url}")
+    if msg.embeds:
+        await report_thread.send(embed=msg.embeds[0])
 
 
-async def notify_user_of_report_connection(author: discord.User, ban_appeal):
-    if not ban_appeal:
-        locale: str = here.bot.db['user_localizations'].get(author.id, "")
-        if locale == 'ja':
-            desc = "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。" \
-                   "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
-                   "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                   "管理者への通報が終了したら、`end`または`close`とタイプしてください。"
-        elif locale.startswith("es"):
-            desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer " \
-                   "mensaje. Los moderadores verán los mensajes o imágenes que " \
-                   "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
-                   "Los moderadores pueden tardar un poco en ver tu reporte, " \
-                   "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
-                   "con los moderadores, escribe `end` o `close` y el chat se cerrará."
-        else:
-            desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
-                   "The moderators will see any messages " \
-                   "or images you send, and you'll receive messages and images from the mods too. " \
-                   "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                   "When you are done talking to the mods, please type `end` or `close`, and then " \
-                   "the chat will close."
-
-        await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
+async def notify_user_of_ban_appeal_connection(author: discord.User):
+    locale: str = here.bot.db['user_localizations'].get(author.id, "")
+    if locale == 'ja':
+        appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
+                    "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
+                    "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
+                    "申請が終了したら、`end`または`close`とタイプしてください。"
+    elif locale.startswith("es"):
+        appeal = "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás " \
+                    "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que " \
+                    "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
+                    "Los moderadores pueden tardar " \
+                    "un poco en ver tu apelación, así que ten paciencia. " \
+                    "\n\nCuando hayas terminado de hablar " \
+                    "con los moderadores, escribe `end` o `close` y el chat se cerrará."
     else:
-        locale: str = here.bot.db['user_localizations'].get(author.id, "")
-        if locale == 'ja':
-            appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
-                     "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
-                     "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                     "申請が終了したら、`end`または`close`とタイプしてください。"
-        elif locale.startswith("es"):
-            appeal = "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás " \
-                     "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que " \
-                     "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
-                     "Los moderadores pueden tardar " \
-                     "un poco en ver tu apelación, así que ten paciencia. " \
-                     "\n\nCuando hayas terminado de hablar " \
-                     "con los moderadores, escribe `end` o `close` y el chat se cerrará."
-        else:
-            appeal = "You are now connected to the moderators of the server, and I've notified them that " \
-                     "you're trying to appeal a ban. The moderators will see any messages " \
-                     "or images you send, and you'll receive messages and images from the mods too. " \
-                     "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                     "When you are done talking to the mods, please type `end` or `close`, and then " \
-                     "the chat will close."
+        appeal = "You are now connected to the moderators of the server, and I've notified them that " \
+                    "you're trying to appeal a ban. The moderators will see any messages " \
+                    "or images you send, and you'll receive messages and images from the mods too. " \
+                    "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
+                    "When you are done talking to the mods, please type `end` or `close`, and then " \
+                    "the chat will close."
 
-        await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
+    await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
+
+
+async def notify_user_of_report_connection(author: discord.User):
+    locale: str = here.bot.db['user_localizations'].get(author.id, "")
+    if locale == 'ja':
+        desc = "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。" \
+                "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
+                "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
+                "管理者への通報が終了したら、`end`または`close`とタイプしてください。"
+    elif locale.startswith("es"):
+        desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer " \
+                "mensaje. Los moderadores verán los mensajes o imágenes que " \
+                "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
+                "Los moderadores pueden tardar un poco en ver tu reporte, " \
+                "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
+                "con los moderadores, escribe `end` o `close` y el chat se cerrará."
+    else:
+        desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
+                "The moderators will see any messages " \
+                "or images you send, and you'll receive messages and images from the mods too. " \
+                "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
+                "When you are done talking to the mods, please type `end` or `close`, and then " \
+                "the chat will close."
+
+    await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
 
 
 async def add_report_to_db(author: discord.User, report_thread: discord.Thread):
@@ -381,50 +401,57 @@ def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> s
     
     return thread_text
 
-
-async def create_report_thread(author: discord.User, msg: discord.Message,
-                               report_channel: Union[discord.TextChannel, discord.ForumChannel],
-                               ban_appeal: bool):
-    entry_text = ""
-    if msg:
-        if len(msg.content) > 150:
-            entry_text = f"**{msg.content[:150]}** [・・・]\n"
-        else:
-            entry_text = f"**{msg.content}**\n"
+def build_report_short_description(author: discord.User, title: str, is_staff_testing = False, is_ban_appeal = False):
+    entry_text = f"{title}\n"
     entry_text += f"The user {author.mention} has entered the report room. Reply in the thread to continue. (@here)"
 
-    member = report_channel.guild.get_member(author.id)
-    if member:
-        if report_channel.permissions_for(member).read_messages:  # someone from staff is testing modbot
-            entry_text = entry_text.replace("@here", "@ here ~ exempted for staff testing")
+    if is_staff_testing:
+        entry_text = entry_text.replace("@here", "@ here ~ exempted for staff testing")
 
-    if ban_appeal:
+    if is_ban_appeal:
         entry_text = f"*(Ban Appeal)*\n" + entry_text
         entry_text = entry_text.replace(author.mention,
                                         f"{author.mention} ({str(author)}, {author.id})")
-
-    thread_text = rf"""
-                    I'll relay any of their messages to this 
-                    channel. 
-                       \- Any messages you type will be sent
-                          to the user. 
-                       \- To end this chat, type `end` or `close`.
-                       \- Typing `finish` will close the chat and 
-                          also add a ✅ emoji to the thread, marking 
-                          it as "Resolved".
-                       \- To *not* send a certain message, start the 
-                          message with `_`. 
-                       \- For example, `Hello` would be sent, but 
-                          `_What should we do` or bot
-                          commands would not be sent.
-                          Currently exempted bot prefixes:
-                          `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
-                    """
     
-    thread_text = dedent(thread_text)
-    thread_text = add_recent_report_info(thread_text, author.id, report_channel.guild.id)
+    return entry_text
 
+def build_report_thread_header(author: discord.User, guild_id: int):
+    thread_text = rf"""
+            I'll relay any of their messages to this 
+            channel. 
+                \- Any messages you type will be sent
+                    to the user. 
+                \- To end this chat, type `end` or `close`.
+                \- Typing `finish` will close the chat and 
+                    also add a ✅ emoji to the thread, marking 
+                    it as "Resolved".
+                \- To *not* send a certain message, start the 
+                    message with `_`. 
+                \- For example, `Hello` would be sent, but 
+                    `_What should we do` or bot
+                    commands would not be sent.
+                    Currently exempted bot prefixes:
+                    `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
+            """
+    thread_text = dedent(thread_text)
+    thread_text = add_recent_report_info(thread_text, author.id, guild_id)
+    return thread_text
+
+async def create_report_thread(author: discord.User, report_text: str,
+                               report_channel: Union[discord.TextChannel, discord.ForumChannel],
+                               ban_appeal: bool):
+
+    if len(report_text) > 150:
+        report_title = f"**{report_text[:150]}** [・・・]\n"
+    else:
+        report_title = f"**{report_text}**\n"
+
+    member = report_channel.guild.get_member(author.id)
+    is_staff_testing = member and report_channel.permissions_for(member).read_messages  # someone from staff is testing modbot
+    entry_text = build_report_short_description(author, report_title, is_staff_testing, ban_appeal)
+    thread_text = build_report_thread_header(author, report_channel.guild.id)
     thread_name = f'{author.name} ({datetime.now().strftime("%Y-%m-%d")})'
+
     if isinstance(report_channel, discord.ForumChannel):
         if ban_appeal:
             tags_to_add, _ = make_tags_list_for_forum_post(report_channel, ["🚷", "❗"])
@@ -484,11 +511,8 @@ async def close_thread(thread: discord.Thread, finish=False):
         await thread.edit(archived=True)
 
 
-async def new_user_role_request_denial(guild: discord.Guild, ban_appeal, author: discord.User, msg: discord.Message,
+async def deny_new_user_role_request(guild: discord.Guild, author: discord.User, msg: discord.Message,
                                        meta_channel: discord.Thread):
-    if ban_appeal:
-        return
-
     # #### SPECIAL STUFF FOR JP SERVER ####
     # Turn away new users asking for a role
     if guild.id == JP_SERV_ID:

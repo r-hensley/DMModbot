@@ -1,4 +1,5 @@
 import os
+from typing import Callable
 
 import discord
 from discord.ext import commands
@@ -35,6 +36,26 @@ async def reinitialize_buttons(unbans):
                 print(f"Setting up main start button view for {channel_id}, {msg_id}")
                 await unbans.setup_appeal_button_view(channel_id, msg_id)
 
+class BanAppealForm(utils.RaiModal, title="Ban Appeal Form"):
+    appeal_text_input = discord.ui.TextInput(
+        label="",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        min_length=16)
+
+    def __init__(self, submit_appeal_callback: Callable[[discord.Interaction, str], None], locale="en"):
+        super().__init__()
+        self.submit_appeal_callback = submit_appeal_callback
+        self.locale = locale
+        self.set_modal_text()
+
+    def set_modal_text(self):
+        # TODO: Add JP and ES locale text
+        self.appeal_text_input.label = "Unban Reason"
+        self.appeal_text_input.placeholder = "Your case for being unbanned here"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.submit_appeal_callback(interaction, self.appeal_text_input.value)
 
 class Unbans(commands.Cog):
     """
@@ -80,7 +101,7 @@ class Unbans(commands.Cog):
         elif channel.category.name == 'servers':
             button.callback = self.start_appeal_button_callback
         
-        if msg:
+        if msg and msg.author == self.bot.user:
             sent_msg = await msg.edit(view=view)
         else:
             invisible_character = "⁣"
@@ -116,7 +137,7 @@ class Unbans(commands.Cog):
         roles = []
         for guild in self.bot.guilds:
             # Check if there's a channel in the appeals server corresponding to guild
-            channel = discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild.id),
+            channel = discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild.id) if c.topic else False,
                                          button_interaction.guild.text_channels)
             if not channel:
                 continue
@@ -159,7 +180,7 @@ class Unbans(commands.Cog):
         if roles:
             guild_ids = [r.name.split('_')[0] for r in roles]
             for guild_id in guild_ids:
-                if found_channel := discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild_id),
+                if found_channel := discord.utils.find(lambda c: c.topic.split('\n')[0] == str(guild_id) if c.topic else False,
                                                        button_interaction.guild.text_channels):
                     found_channels.append(found_channel)
         
@@ -221,6 +242,14 @@ class Unbans(commands.Cog):
                                                            "main server.")
             return
         
+        # Check if user is not already unbanned
+        try:
+            await guild.fetch_ban(button_interaction.user)
+        except discord.NotFound:
+            await button_interaction.response.send_message("You are not banned or already unbanned from this server.",
+                                                           ephemeral=True)
+            return
+        
         # Create DM channel
         dm_channel = button_interaction.user.dm_channel
         if not dm_channel:
@@ -277,11 +306,15 @@ class Unbans(commands.Cog):
             await button_interaction.edit_original_response(view=None)
         
         view.on_timeout = on_timeout
+
+        async def on_ban_appeal_submit(interaction: discord.Interaction, appeal_text: str):
+            await interaction.response.send_message(final_text, ephemeral=True)
+            await self.start_ban_appeal(button_interaction.user, guild, appeal_text)
         
         async def confirmation_callback(confirmation_interaction: discord.Interaction):
-            await confirmation_interaction.response.send_message(final_text, ephemeral=True)
             await button_interaction.edit_original_response(view=None)
-            await self.start_ban_appeal(confirmation_interaction.user, guild)
+            await confirmation_interaction.response.send_modal(
+                BanAppealForm(on_ban_appeal_submit))
         
         async def cancellation_callback(cancellation_confirmation: discord.Interaction):
             await button_interaction.edit_original_response(view=None)
@@ -291,10 +324,13 @@ class Unbans(commands.Cog):
         cancellation_button.callback = cancellation_callback
         await button_interaction.response.send_message(response_text, view=view, ephemeral=True)
     
-    async def start_ban_appeal(self, user: discord.User, guild: discord.Guild):
+    async def start_ban_appeal(self, user: discord.User, guild: discord.Guild, appeal_msg_text: str):
+        # In case modal does not close properly but the appeal is made, prevent copies
+        if user.id in self.bot.db['reports']:
+            return
         # noinspection PyTypeChecker
         cog: Modbot = self.bot.get_cog("Modbot")
-        await cog.start_report_room(user, guild, msg=None, main_or_secondary="main", ban_appeal=True)
+        await cog.start_ban_appeal_room(user, guild, appeal_text=appeal_msg_text, main_or_secondary="main")
 
 
 async def setup(bot):
