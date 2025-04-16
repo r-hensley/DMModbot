@@ -1,5 +1,13 @@
 # DMModBot
 
+### Cloning the Repo
+
+This repo uses git submodules, so when cloning be sure to use:
+
+```bash
+git clone --recurse-submodules
+```
+
 ### Running the bot
 
 1. Create venv if you don't have it already
