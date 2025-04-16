@@ -526,9 +526,19 @@ class Modbot(commands.Cog):
             if msg.embeds:
                 await open_report.dest.send(embeds=msg.embeds)
 
-            if msg.attachments:
-                for attachment in msg.attachments:
-                    await open_report.dest.send(f">>> {attachment.url}")
+            for attachment in msg.attachments:
+                try:
+                    file = await attachment.to_file()
+                except discord.HTTPException:
+                    await open_report.dest.send(f"{attachment.url}")
+                else:
+                    await open_report.dest.send(file=file)
+                    
+            for sticker in msg.stickers:
+                try:
+                    await open_report.dest.send(stickers=[sticker])
+                except (discord.HTTPException, discord.Forbidden):
+                    await open_report.dest.send(f"{getattr(sticker, 'url', str(sticker))}")
 
             if cont:
                 await open_report.dest.send(cont)
