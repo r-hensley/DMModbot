@@ -56,9 +56,12 @@ class BanAppealForm(utils.RaiModal, title="Ban Appeal Form"):
             'en': "Your case for being unbanned here (you can send more messages, pictures, files, etc later)",
             'es': "Su caso para ser desbaneado aquí (puede enviar más mensajes, imágenes, archivos, etc. más tarde)",
             'ja': "後でさらにメッセージ、画像、ファイルなどを送信できます。",
-            'zh': "您可以稍后发送更多消息、图片、文件等。"
+            'zh-CN': "稍后可以发送更多消息、图片、文件等。",
+            'zh-TW': "稍後可以發送更多消息、圖片、文件等。",
         }
         self.appeal_text_input.label = "Unban Reason"
+        if not self.locale.startswith("zh"):
+            self.locale = self.locale.split('-')[0]  # e.g. en-US -> en, es-ES -> es, but keep zh-CN and zh-TW
         self.appeal_text_input.placeholder = placeholder_text_langs.get(self.locale, placeholder_text_langs['en'])
 
     async def on_submit(self, interaction: discord.Interaction):
