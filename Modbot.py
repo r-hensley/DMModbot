@@ -13,6 +13,12 @@ from dotenv import load_dotenv
 
 import os
 
+try:
+    if not os.listdir('cogs/utils/BotUtils'):
+        raise FileNotFoundError
+except FileNotFoundError:
+    raise FileNotFoundError("The BotUtils submodule is not initialized. "
+                            "Please run 'git submodule update --init --recursive' to initialize it.")
 from cogs.utils import helper_functions as hf
 
 dir_path = os.path.dirname(os.path.realpath(__file__))

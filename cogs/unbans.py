@@ -1,5 +1,5 @@
 import os
-from typing import Callable
+from collections.abc import Callable, Awaitable
 
 import discord
 from discord.ext import commands
@@ -43,16 +43,23 @@ class BanAppealForm(utils.RaiModal, title="Ban Appeal Form"):
         required=True,
         min_length=16)
 
-    def __init__(self, submit_appeal_callback: Callable[[discord.Interaction, str], None], locale="en"):
+    def __init__(self,
+                 submit_appeal_callback: Callable[[discord.Interaction, str], Awaitable[None]],
+                 locale="en"):
         super().__init__()
         self.submit_appeal_callback = submit_appeal_callback
         self.locale = locale
         self.set_modal_text()
 
     def set_modal_text(self):
-        # TODO: Add JP and ES locale text
+        placeholder_text_langs = {
+            'en': "Your case for being unbanned here (you can send more messages, pictures, files, etc later)",
+            'es': "Su caso para ser desbaneado aquí (puede enviar más mensajes, imágenes, archivos, etc. más tarde)",
+            'ja': "後でさらにメッセージ、画像、ファイルなどを送信できます。",
+            'zh': "您可以稍后发送更多消息、图片、文件等。"
+        }
         self.appeal_text_input.label = "Unban Reason"
-        self.appeal_text_input.placeholder = "Your case for being unbanned here"
+        self.appeal_text_input.placeholder = placeholder_text_langs.get(self.locale, placeholder_text_langs['en'])
 
     async def on_submit(self, interaction: discord.Interaction):
         await self.submit_appeal_callback(interaction, self.appeal_text_input.value)
@@ -246,9 +253,10 @@ class Unbans(commands.Cog):
         try:
             await guild.fetch_ban(button_interaction.user)
         except discord.NotFound:
-            await button_interaction.response.send_message("You are not banned or already unbanned from this server.",
-                                                           ephemeral=True)
-            return
+            if not button_interaction.user.id == int(os.getenv("OWNER_ID")):
+                await button_interaction.response.send_message("You are not banned or already unbanned from this server.",
+                                                               ephemeral=True)
+                return
         
         # Create DM channel
         dm_channel = button_interaction.user.dm_channel
@@ -313,8 +321,7 @@ class Unbans(commands.Cog):
         
         async def confirmation_callback(confirmation_interaction: discord.Interaction):
             await button_interaction.edit_original_response(view=None)
-            await confirmation_interaction.response.send_modal(
-                BanAppealForm(on_ban_appeal_submit))
+            await confirmation_interaction.response.send_modal(BanAppealForm(on_ban_appeal_submit, str(locale)))
         
         async def cancellation_callback(cancellation_confirmation: discord.Interaction):
             await button_interaction.edit_original_response(view=None)

@@ -707,6 +707,7 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
 
 
 def get_user_locale(user_id: int) -> str:
+    """Returns the user's locale from the database, defaulting to 'en'."""
     return here.bot.db.get('user_localizations', {}).get(user_id, 'en')[:2]
 
 
