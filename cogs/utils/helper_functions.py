@@ -401,6 +401,9 @@ def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> s
     
     return thread_text
 
+def escape_username(username: str):
+    return username.replace("_", "\_")
+
 def build_report_short_description(author: discord.User, title: str, is_staff_testing = False, is_ban_appeal = False):
     entry_text = f"{title}\n"
     entry_text += f"The user {author.mention} has entered the report room. Reply in the thread to continue. (@here)"
@@ -411,7 +414,7 @@ def build_report_short_description(author: discord.User, title: str, is_staff_te
     if is_ban_appeal:
         entry_text = f"*(Ban Appeal)*\n" + entry_text
         entry_text = entry_text.replace(author.mention,
-                                        f"{author.mention} ({str(author)}, {author.id})")
+                                        f"{author.mention} ({escape_username(str(author))}, {author.id})")
     
     return entry_text
 
