@@ -145,7 +145,7 @@ class Modbot(commands.Cog):
         # try to put user into report room
         else:
             guild: discord.Guild
-            main_or_secondary: str  # "main" means main report room, "secondary" means report room for staff
+            main_or_secondary: str  # "main" means main report room, "secondary" means secondary report room, "voice" means voice report room
             try:  # the user selects to which server they want to connect
                 self.bot.db['settingup'].append(msg.author.id)
                 guild, main_or_secondary = await self.server_select(msg)
