@@ -559,7 +559,9 @@ async def get_report_variables(guild, main_or_secondary, author):
     guild_config = here.bot.db['guilds'][guild.id]
     if main_or_secondary == 'main':
         target_id = guild_config['channel']
-
+    elif main_or_secondary == 'voice':
+        # For voice reports, check if voice_channel is configured, otherwise fall back to secondary or main
+        target_id = guild_config.get('voice_channel', guild_config.get('secondary_channel', guild_config.get('channel')))
     else:  # main_or_secondary == 'secondary'
         target_id = guild_config.get('secondary_channel', guild_config.get('channel'))
 
@@ -574,6 +576,10 @@ async def get_report_variables(guild, main_or_secondary, author):
                 await author.send("The report room for this server is not properly setup. Please directly message "
                                   "the mods. (I can't find the ID for the channel to send info messages in)")
                 raise EndEarly
+        if main_or_secondary == 'voice' and 'voice_channel' in guild_config:
+            voice_meta_channel_id = guild_config.get('voice_meta_channel')
+            if voice_meta_channel_id:
+                meta_channel_id = voice_meta_channel_id
         
         meta_channel = report_channel.get_thread(meta_channel_id)
         if not meta_channel:
