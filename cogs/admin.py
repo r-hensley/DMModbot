@@ -20,6 +20,8 @@ INSTRUCTIONS = ["・`end` or `close` - Finish the current report.",
                 "If not setup, those questions will still come to this channel. Consider creating this room for a "
                 "larger group of server helpers to answer questions that don't need to be answered by the main team "
                 "of mods on the server.",
+                "・`_setup voice` - Setup or reset a voice report room for voice channel-related reports. "
+                "If not setup, voice reports will be directed to the secondary or main report room.",
                 "・`_clear` - Clear the waiting list",
                 "・`_send <id> <message text>` - Sends a message to a user or channel. It's helpful when you "
                 "want a user to come to the report room or send an official mod message to a channel.",
@@ -118,7 +120,9 @@ class Admin(commands.Cog):
 
         Type `_setup secondary` to set up a secondary report room for users who have
         just questions about the server in general rather than reports. Consider opening
-        this room up to a group of server helpers rather than the main mods only."""
+        this room up to a group of server helpers rather than the main mods only.
+        
+        Type `_setup voice` to set up a voice report room for voice channel-related reports."""
         guilds = self.bot.db['guilds']
         if ctx.guild.id not in guilds:
             guilds[ctx.guild.id] = {'mod_role': None}
@@ -138,6 +142,17 @@ class Admin(commands.Cog):
 
             main_msg = main_msg.replace("report channel", "secondary report channel")
             guilds[ctx.guild.id]['secondary_channel'] = ctx.channel.id
+            await ctx.send(main_msg)
+            await ctx.send(INSTRUCTIONS)
+            await dump_json(ctx)
+
+        elif secondary == 'voice':
+            if 'channel' not in guilds.get(ctx.guild.id, {}):
+                await ctx.send("Please set up the main report room first by typing just `_setup`.")
+                return
+
+            main_msg = main_msg.replace("report channel", "voice report channel")
+            guilds[ctx.guild.id]['voice_channel'] = ctx.channel.id
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
             await dump_json(ctx)

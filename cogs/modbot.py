@@ -145,7 +145,7 @@ class Modbot(commands.Cog):
         # try to put user into report room
         else:
             guild: discord.Guild
-            main_or_secondary: str  # "main" means main report room, "secondary" means report room for staff
+            main_or_secondary: str  # "main" means main report room, "secondary" means secondary report room, "voice" means voice report room
             try:  # the user selects to which server they want to connect
                 self.bot.db['settingup'].append(msg.author.id)
                 guild, main_or_secondary = await self.server_select(msg)
@@ -377,12 +377,68 @@ class Modbot(commands.Cog):
         except asyncio.TimeoutError:
             return None, None  # no button pressed
         else:
+            initial_room_type = None
             if interaction.data.get("custom_id", "") in [report_button.custom_id, account_q_button.custom_id]:
-                return guild, 'main'
+                initial_room_type = 'main'
             elif interaction.data.get("custom_id", "") == server_q_button.custom_id:
-                return guild, 'secondary'
+                initial_room_type = 'secondary'
             else:
                 return None, None
+            
+            # Ask follow-up question about voice channels
+            final_room_type = await self.ask_voice_channel_question(author, initial_room_type)
+            return guild, final_room_type
+    
+    async def ask_voice_channel_question(self, author: Union[discord.User, discord.Member], 
+                                         initial_room_type: str) -> str:
+        """Ask the user if their report is related to voice channels"""
+        from cogs.utils.BotUtils import bot_utils as utils
+        
+        # Create buttons for Yes/No response
+        yes_button = discord.ui.Button(label="Yes", style=discord.ButtonStyle.primary)
+        no_button = discord.ui.Button(label="No", style=discord.ButtonStyle.secondary)
+        
+        view = utils.RaiView(timeout=180)
+        view.add_item(yes_button)
+        view.add_item(no_button)
+        
+        # Send the question to the user
+        if not author.dm_channel:
+            await author.create_dm()
+        
+        question_text = "Is this report related to the voice channels?"
+        question_msg = await author.dm_channel.send(question_text, view=view)
+        
+        # Wait for the user to press a button
+        def check_for_voice_button_press(i):
+            return i.type == discord.InteractionType.component and \
+                   i.user.id == author.id and \
+                   i.data.get("custom_id", "") in [yes_button.custom_id, no_button.custom_id]
+        
+        try:
+            interaction = await self.bot.wait_for("interaction", timeout=180.0, check=check_for_voice_button_press)
+        except asyncio.TimeoutError:
+            # If timeout, default to the initial room type
+            try:
+                await question_msg.edit(content="No response received. Using default room type.", view=None)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+            return initial_room_type
+        else:
+            # Delete the question message
+            try:
+                await question_msg.delete()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+            
+            # Respond to the interaction
+            await interaction.response.send_message("Processing your selection...", ephemeral=True)
+            
+            # Determine the final room type based on the user's response
+            if interaction.data.get("custom_id", "") == yes_button.custom_id:
+                return 'voice'
+            else:
+                return initial_room_type
             
     async def start_ban_appeal_room(self, author: discord.User, guild: discord.Guild, appeal_text: str, main_or_secondary: str):
         try:
