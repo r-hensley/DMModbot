@@ -172,54 +172,82 @@ async def deliver_first_report_msg_to_thread(
 
 
 async def notify_user_of_ban_appeal_connection(author: discord.User):
-    locale: str = here.bot.db['user_localizations'].get(author.id, "")
-    if locale == 'ja':
-        appeal = "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。" \
-                    "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
-                    "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                    "申請が終了したら、`end`または`close`とタイプしてください。"
-    elif locale.startswith("es"):
-        appeal = "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás " \
-                    "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que " \
-                    "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
-                    "Los moderadores pueden tardar " \
-                    "un poco en ver tu apelación, así que ten paciencia. " \
-                    "\n\nCuando hayas terminado de hablar " \
-                    "con los moderadores, escribe `end` o `close` y el chat se cerrará."
-    else:
-        appeal = "You are now connected to the moderators of the server, and I've notified them that " \
-                    "you're trying to appeal a ban. The moderators will see any messages " \
-                    "or images you send, and you'll receive messages and images from the mods too. " \
-                    "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                    "When you are done talking to the mods, please type `end` or `close`, and then " \
-                    "the chat will close."
-
-    await author.send(embed=discord.Embed(description=appeal, color=0x00FF00))
+    locale: str = get_user_locale(author.id)
+    appeal_desc = {
+        "en": "You are now connected to the moderators of the server, and I've notified them that "
+              "you're trying to appeal a ban. The moderators will see any messages or images you send, "
+              "and you'll receive messages and images from the mods too. "
+              "It may take a while for the moderators to see your appeal, so please be patient.\n\n"
+              "When you are done talking to the mods, please type `end` or `close`, and then the chat will close.",
+        
+        "es": "Ahora estás conectado con los moderadores del servidor, y les he notificado que estás "
+              "intentando apelar una expulsión. Los moderadores verán los mensajes o imágenes que envíes, "
+              "y también recibirás mensajes e imágenes de los moderadores. "
+              "Los moderadores pueden tardar un poco en ver tu apelación, así que ten paciencia.\n\n"
+              "Cuando hayas terminado de hablar con los moderadores, escribe `end` o `close` y el chat se cerrará.",
+        
+        "ja": "サーバーの管理者に接続しました。またこれによりバンの解除申請が管理者に通知されました。"
+              "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。"
+              "お返事に時間がかかる場合がございますので、ご了承ください。\n\n"
+              "申請が終了したら、`end`または`close`とタイプしてください。",
+        
+        "fr": "Tu es maintenant connecté aux modérateurs du serveur, et je les ai informés que tu essaies "
+              "de faire appel d’un bannissement. Les modérateurs verront tous les messages ou images que tu envoies, "
+              "et tu recevras également leurs réponses. "
+              "Il se peut que les modérateurs mettent un certain temps à voir ton appel, merci de ta patience.\n\n"
+              "Quand tu auras fini de parler aux modérateurs, tape `end` ou `close` et la conversation sera fermée.",
+        
+        "ar": "أنت الآن متصل بمشرفي الخادم، وقد أبلغتهم بأنك تحاول استئناف حظر. "
+              "سيرى المشرفون أي رسائل أو صور ترسلها، وستتلقى أيضًا رسائل وصورًا من المشرفين. "
+              "قد يستغرق الأمر بعض الوقت حتى يراجع المشرفون استئنافك، لذا يرجى التحلي بالصبر.\n\n"
+              "عندما تنتهي من التحدث مع المشرفين، اكتب `end` أو `close` وسيتم إغلاق الدردشة.",
+        
+        "zh": "你现在已连接到服务器的管理员，我已经通知他们你正在尝试申诉封禁。"
+              "管理员会看到你发送的任何消息或图片，你也会收到他们的回复。"
+              "管理员可能需要一些时间才能查看你的申诉，请耐心等待。\n\n"
+              "当你结束与管理员的对话时，请输入 `end` 或 `close`，然后聊天将关闭。"
+    }
+    
+    await author.send(embed=discord.Embed(description=appeal_desc.get(locale, appeal_desc['en']),
+                                          color=0x00FF00))
 
 
 async def notify_user_of_report_connection(author: discord.User):
-    locale: str = here.bot.db['user_localizations'].get(author.id, "")
-    if locale == 'ja':
-        desc = "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。" \
-                "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。" \
-                "お返事に時間がかかる場合がございますので、ご了承ください。\n\n" \
-                "管理者への通報が終了したら、`end`または`close`とタイプしてください。"
-    elif locale.startswith("es"):
-        desc = "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer " \
-                "mensaje. Los moderadores verán los mensajes o imágenes que " \
-                "envíes, y también recibirás mensajes y imágenes de los moderadores. " \
-                "Los moderadores pueden tardar un poco en ver tu reporte, " \
-                "así que ten paciencia. \n\nCuando hayas terminado de hablar " \
-                "con los moderadores, escribe `end` o `close` y el chat se cerrará."
-    else:
-        desc = "You are now connected to the moderators of the server, and I've sent your first message. " \
-                "The moderators will see any messages " \
-                "or images you send, and you'll receive messages and images from the mods too. " \
-                "It may take a while for the moderators to see your appeal, so please be patient. \n\n" \
-                "When you are done talking to the mods, please type `end` or `close`, and then " \
-                "the chat will close."
-
-    await author.send(embed=discord.Embed(description=desc, color=0x00FF00))
+    locale: str = get_user_locale(author.id)
+    desc = {
+        "en": "You are now connected to the moderators of the server, and I've sent your first message. "
+              "The moderators will see any messages or images you send, and you'll receive messages and images from the mods too. "
+              "It may take a while for the moderators to see your appeal, so please be patient.\n\n"
+              "When you are done talking to the mods, please type `end` or `close`, and then the chat will close.",
+        
+        "es": "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer mensaje. "
+              "Los moderadores verán los mensajes o imágenes que envíes, y también recibirás mensajes e imágenes de los moderadores. "
+              "Los moderadores pueden tardar un poco en ver tu reporte, así que ten paciencia.\n\n"
+              "Cuando hayas terminado de hablar con los moderadores, escribe `end` o `close` y el chat se cerrará.",
+        
+        "ja": "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。"
+              "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。"
+              "お返事に時間がかかる場合がございますので、ご了承ください。\n\n"
+              "管理者への通報が終了したら、`end`または`close`とタイプしてください。",
+        
+        "fr": "Tu es maintenant connecté aux modérateurs du serveur, et j’ai envoyé ton premier message. "
+              "Les modérateurs verront tous les messages ou images que tu envoies, et tu recevras également leurs réponses. "
+              "Il se peut que les modérateurs mettent un certain temps à voir ton message, merci de ta patience.\n\n"
+              "Quand tu auras fini de parler aux modérateurs, tape `end` ou `close` et la conversation sera fermée.",
+        
+        "ar": "أنت الآن متصل بمشرفي الخادم، وقد أرسلت رسالتك الأولى لهم. "
+              "سيرى المشرفون أي رسائل أو صور ترسلها، وستتلقى أيضًا رسائل وصورًا من المشرفين. "
+              "قد يستغرق الأمر بعض الوقت حتى يطلع المشرفون على بلاغك، لذا يرجى التحلي بالصبر.\n\n"
+              "عندما تنتهي من التحدث مع المشرفين، اكتب `end` أو `close` وسيتم إغلاق الدردشة.",
+        
+        "zh": "你现在已连接到服务器的管理员，我已经将你的第一条消息发送给他们。"
+              "管理员会看到你发送的任何消息或图片，你也会收到来自管理员的回复。"
+              "管理员可能需要一些时间才能看到你的申诉，请耐心等待。\n\n"
+              "当你结束与管理员的对话时，请输入 `end` 或 `close`，然后聊天将关闭。"
+    }
+    
+    await author.send(embed=discord.Embed(description=desc.get(locale, desc['en']),
+                                          color=0x00FF00))
 
 
 async def add_report_to_db(author: discord.User, report_thread: discord.Thread):
@@ -439,7 +467,7 @@ def build_report_thread_header(author: discord.User, guild_id: int):
 
 async def create_report_thread(author: discord.User, report_text: str,
                                report_channel: Union[discord.TextChannel, discord.ForumChannel],
-                               ban_appeal: bool):
+                               ban_appeal: bool = False, voice_report: bool = False):
 
     if len(report_text) > 150:
         report_title = f"**{report_text[:150]}** [・・・]\n"
@@ -453,10 +481,15 @@ async def create_report_thread(author: discord.User, report_text: str,
     thread_name = f'{author.name} ({datetime.now().strftime("%Y-%m-%d")})'
 
     if isinstance(report_channel, discord.ForumChannel):
+        tags = ["❗"]
         if ban_appeal:
-            tags_to_add, _ = make_tags_list_for_forum_post(report_channel, ["🚷", "❗"])
+            tags.append("🚷")
+        if voice_report:
+            tags.append('🗣️')
         else:
-            tags_to_add, _ = make_tags_list_for_forum_post(report_channel, ["❗"])
+            tags.append('🔤')
+        
+        tags_to_add, _ = make_tags_list_for_forum_post(report_channel, tags)
 
         report_thread = (await report_channel.create_thread(name=thread_name,
                                                             content=f"{entry_text}\n{thread_text}",
@@ -555,31 +588,39 @@ async def deny_new_user_role_request(guild: discord.Guild, author: discord.User,
             raise EndEarly
 
 
-async def get_report_variables(guild, main_or_secondary, author):
+async def get_report_variables(guild, report_room_type, author):
     guild_config = here.bot.db['guilds'][guild.id]
-    if main_or_secondary == 'main':
+    
+    if report_room_type == 'main':
         target_id = guild_config['channel']
-    elif main_or_secondary == 'voice':
-        # For voice reports, check if voice_channel is configured, otherwise fall back to secondary or main
-        target_id = guild_config.get('voice_channel', guild_config.get('secondary_channel', guild_config.get('channel')))
-    else:  # main_or_secondary == 'secondary'
+        
+    elif report_room_type == 'secondary':
         target_id = guild_config.get('secondary_channel', guild_config.get('channel'))
+        
+    elif report_room_type == 'voice':
+        target_id = guild_config.get('voice_report_channel', guild_config.get('channel'))
+
+    else:
+        raise Exception(f"Invalid report_room_type `{report_room_type}`")
 
     report_channel: Union[discord.Thread, discord.TextChannel] = here.bot.get_channel(target_id)
     if isinstance(report_channel, discord.ForumChannel):
         # a pinned post in forum where I can send info messages
         meta_channel_id = here.bot.db['guilds'][guild.id].get('meta_channel')
-        if 'secondary_channel' in guild_config:
-            if main_or_secondary == 'secondary':
-                meta_channel_id = guild_config.get('secondary_meta_channel')
-            if not meta_channel_id:
-                await author.send("The report room for this server is not properly setup. Please directly message "
-                                  "the mods. (I can't find the ID for the channel to send info messages in)")
+        
+        if 'secondary_channel' in guild_config and report_room_type == 'secondary':
+            if not (meta_channel_id := guild_config.get('secondary_meta_channel')):
+                await author.send("The report room for this server is not properly setup. "
+                                  "Please directly message "
+                                  "the mods. "
+                                  "(I can't find the ID for the channel to send info messages in)")
                 raise EndEarly
-        if main_or_secondary == 'voice' and 'voice_channel' in guild_config:
-            voice_meta_channel_id = guild_config.get('voice_meta_channel')
-            if voice_meta_channel_id:
-                meta_channel_id = voice_meta_channel_id
+            
+        if report_room_type == 'voice' and 'voice_report_channel' in guild_config:
+            if not (meta_channel_id := guild_config.get('voice_report_meta_channel')):
+                await author.send("The report room here is not properly setup. Please message the "
+                                  "mods directly and tell them this.")
+                raise EndEarly
         
         meta_channel = report_channel.get_thread(meta_channel_id)
         if not meta_channel:
@@ -642,18 +683,42 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
            f"the mods of {guild.name}.\n\n"
            "**Please push one of the below buttons.**")
     view = utils.RaiView(timeout=180)
-    report_str = {'en': "I want to report a user",
-                  'es': "Quiero reportar a un usuario",
-                  'ja': "他のユーザーを通報したい"}
-    account_q_str = {'en': "I have a question about my account",
-                     'es': "Tengo una pregunta sobre mi cuenta",
-                     'ja': "自分のアカウントについて質問がある"}
-    server_q_str = {'en': "I have a question about the server",
-                    'es': "Tengo una pregunta sobre el servidor",
-                    'ja': "サーバーについて質問がある"}
-    cancel_str = {"en": "Nevermind, cancel this menu.",
-                  "es": "Olvídalo, cancela este menú",
-                  'ja': "なんでもない、このメニューを閉じてください"}
+    report_str = {
+        'en': "I want to report a user",
+        'es': "Quiero reportar a un usuario",
+        'ja': "他のユーザーを通報したい",
+        'fr': "Je veux signaler un utilisateur",
+        'ar': "أريد الإبلاغ عن مستخدم",
+        'zh': "我要举报一个用户"
+    }
+    
+    account_q_str = {
+        'en': "I have a question about my account",
+        'es': "Tengo una pregunta sobre mi cuenta",
+        'ja': "自分のアカウントについて質問がある",
+        'fr': "J'ai une question concernant mon compte",
+        'ar': "لدي سؤال حول حسابي",
+        'zh': "我有一个关于我账户的问题"
+    }
+    
+    server_q_str = {
+        'en': "I have a question about the server",
+        'es': "Tengo una pregunta sobre el servidor",
+        'ja': "サーバーについて質問がある",
+        'fr': "J'ai une question concernant le serveur",
+        'ar': "لدي سؤال حول الخادم",
+        'zh': "我有一个关于服务器的问题"
+    }
+    
+    cancel_str = {
+        'en': "Nevermind, cancel this menu.",
+        'es': "Olvídalo, cancela este menú",
+        'ja': "なんでもない、このメニューを閉じてください",
+        'fr': "Laisse tomber, annule ce menu.",
+        'ar': "لا بأس، ألغِ هذه القائمة",
+        'zh': "算了，取消这个菜单"
+    }
+    
     user_locale = get_user_locale(author.id)
     report_button = discord.ui.Button(label=report_str.get(user_locale) or report_str['en'],
                                       style=discord.ButtonStyle.primary, row=1)
@@ -676,12 +741,21 @@ async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User
         locale = button_interaction.locale
         here.bot.db['user_localizations'][author.id] = str(locale)
         await q_msg.delete()
-        first_msg_conf = {"en": "I will try to send your first message. "
-                                "Make sure all the messages you send receive a '📨' reaction.",
-                          "es": "Intentaré enviar tu primer mensaje. "
-                                "Asegúrate de que todos los mensajes que envíes reciban una reacción '📨'.",
-                          "ja": "あなたの最初のメッセージを送信してみます。"
-                                "送信するすべてのメッセージが '📨' のリアクションが付くことを確認してください。"}
+        first_msg_conf = {
+            "en": "I will try to send your first message. "
+                  "Make sure all the messages you send receive a '📨' reaction.",
+            "es": "Intentaré enviar tu primer mensaje. "
+                  "Asegúrate de que todos los mensajes que envíes reciban una reacción '📨'.",
+            "ja": "あなたの最初のメッセージを送信してみます。"
+                  "送信するすべてのメッセージが '📨' のリアクションが付くことを確認してください。",
+            "fr": "Je vais essayer d'envoyer ton premier message. "
+                  "Assure-toi que tous les messages que tu envoies reçoivent une réaction '📨'.",
+            "ar": "سأحاول إرسال رسالتك الأولى. "
+                  "تأكد من أن جميع الرسائل التي ترسلها تتلقى رد فعل '📨'.",
+            "zh": "我会尝试发送你的第一条消息。"
+                  "请确保你发送的所有消息都收到一个 '📨' 的反应。"
+        }
+        
         conf_txt = first_msg_conf.get(str(locale)[:2], first_msg_conf['en'])
         await button_interaction.response.send_message(conf_txt, ephemeral=True)
 

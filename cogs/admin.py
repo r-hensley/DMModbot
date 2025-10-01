@@ -152,7 +152,7 @@ class Admin(commands.Cog):
                 return
 
             main_msg = main_msg.replace("report channel", "voice report channel")
-            guilds[ctx.guild.id]['voice_channel'] = ctx.channel.id
+            guilds[ctx.guild.id]['voice_report_channel'] = ctx.channel.id
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
             await dump_json(ctx)
@@ -266,7 +266,7 @@ class Admin(commands.Cog):
         
         try:
             await button_interaction.user.send("Please start your report by typing to me your message here.")
-            # guild, main_or_secondary = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
+            # guild, report_room_type = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
         except discord.Forbidden:
             await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
                                                    "privacy settings."
@@ -276,7 +276,7 @@ class Admin(commands.Cog):
         
         # if guild:
         #     await cog.start_report_room(button_interaction.user, guild, msg=None,
-        #                                 main_or_secondary=main_or_secondary, ban_appeal=False)
+        #                                 report_room_type=report_room_type, ban_appeal=False)
 
     async def setup_report_button_view(self,
                                        channel_id: int,

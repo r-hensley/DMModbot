@@ -292,11 +292,15 @@ class Owner(commands.Cog):
         await ctx.send(f"Updated channel for {ctx.guild.name} to {channel_after.mention}")
 
     @commands.command()
-    async def setup_forum(self, ctx: commands.Context, forum_channel_id: int):
+    async def setup_forum(self,
+                          ctx: commands.Context,
+                          forum_channel_id: int,
+                          report_room_type: str = "main"):
         """This command will:
         1) Create post called 'Meta Discussion' in the forum channel, pin it, and add the ID to
         bot.db['guilds']['meta_channel']
-        2) Create tags: Complete (✅), Open (❗), Closed (Not Resolved) (⏹️), and Ban Appeal (🚷)"""
+        2) Create tags: Complete (✅), Open (❗), Closed (Not Resolved) (⏹️),
+        and Ban Appeal (🚷)"""
         forum_channel = self.bot.get_channel(forum_channel_id)
         perms = forum_channel.permissions_for(ctx.guild.me)
         if not perms.create_public_threads:
@@ -311,33 +315,71 @@ class Owner(commands.Cog):
             await ctx.send(f"Bot doesn't have the permission to manage threads in {forum_channel.mention} "
                            f"(it's necessary for being able to archive threads!)")
             return
-        # create the meta discussion post
-        txt = "This is the meta discussion post for the forum. Please use this post to discuss anything related to " \
-              "the forum."
-        meta_post = (await forum_channel.create_thread(name='Meta Discussion', content=txt)).thread
+            
+        # check for a thread that is already pinned, and reuse it if so
+        thread_name = "Meta Discussion"
+        meta_thread = None
+        for thread in forum_channel.threads:
+            if thread.flags.pinned:
+                if thread.name == thread_name:
+                    meta_thread = thread
+                else:
+                    await ctx.send(f"I found a pinned thread in that channel already, but it "
+                                   f"doesn't match the name I expect ({thread_name}). Please "
+                                   f"unpin it and rerun this command.")
+                    return
+                break
+        
+        if not meta_thread:
+            # create the meta discussion post
+            txt = ("This is the meta discussion post for the forum. "
+                   "Please use this post to discuss anything related to "
+                  "the forum.")
+            meta_thread = (await forum_channel.create_thread(name=thread_name, content=txt)).thread
 
-        try:
-            await meta_post.edit(pinned=True)
-        except discord.HTTPException as e:
-            if e.code == 30047:
-                # discord.errors.HTTPException: 400 Bad Request (error code: 30047):
-                # Maximum number pinned threads in this channel reached (1).
-                await ctx.send(f"Couldn't pin the meta post in {forum_channel.mention} because forum post already "
-                               f"has one pinned post. Please remove that!")
-                return
+            try:
+                await meta_thread.edit(pinned=True)
+            except discord.HTTPException as e:
+                if e.code == 30047:
+                    # discord.errors.HTTPException: 400 Bad Request (error code: 30047):
+                    # Maximum number pinned threads in this channel reached (1).
+                    # await ctx.send(f"Couldn't pin the meta post in {forum_channel.mention}
+                    # because forum post already "
+                    #                f"has one pinned post. Please remove that!")
+                    return
             
         # create the tags
-        tags = {'Complete': '✅', 'Open': '❗', 'Closed (Unresolved)': '⏹️', 'Ban Appeal': '🚷'}
+        tags = {'Complete': '✅',
+                'Open': '❗',
+                'Closed (Unresolved)': '⏹️',
+                'Ban Appeal': '🚷',
+                'Voice': '🗣️',
+                'Text': '🔤'}
         for name, emoji in tags.items():
-            await hf.send_to_test_channel(name, emoji, discord.PartialEmoji.from_str(emoji))
-            await forum_channel.create_tag(name=name, emoji=discord.PartialEmoji.from_str(emoji))
+            try:
+                await forum_channel.create_tag(name=name, emoji=discord.PartialEmoji.from_str(emoji))
+            except discord.HTTPException as e:
+                if e.code == 40061:
+                    # "Tag names must be unique"
+                    # tag already exists
+                    continue
             
         # update bot.db['guilds']['meta_channel'] with the new channel id
-        self.bot.db['guilds'][ctx.guild.id]['channel'] = forum_channel_id
-        self.bot.db['guilds'][ctx.guild.id]['meta_channel'] = meta_post.id
-        # self.bot.db['guilds'][ctx.guild.id]['secondary_channel'] = forum_channel_id
-        # self.bot.db['guilds'][ctx.guild.id]['secondary_meta_channel'] = meta_post.id
-        await ctx.send(f"Setup forum channel {forum_channel.mention} for {ctx.guild.name}")
+        if report_room_type == 'main':
+            self.bot.db['guilds'][ctx.guild.id]['channel'] = forum_channel_id
+            self.bot.db['guilds'][ctx.guild.id]['meta_channel'] = meta_thread.id
+        elif report_room_type == 'secondary':
+            self.bot.db['guilds'][ctx.guild.id]['secondary_channel'] = forum_channel_id
+            self.bot.db['guilds'][ctx.guild.id]['secondary_meta_channel'] = meta_thread.id
+        elif report_room_type == 'voice':
+            self.bot.db['guilds'][ctx.guild.id]['voice_report_channel'] = forum_channel_id
+            self.bot.db['guilds'][ctx.guild.id]['voice_report_meta_channel'] = meta_thread.id
+        else:
+            await ctx.send(f"Unknown report room type ({report_room_type}). Please try again and "
+                           f"choose 'main', 'secondary', or 'voice'. ")
+            
+        await ctx.send(f"Setup {report_room_type} forum channel {forum_channel.mention} "
+                       f"for {ctx.guild.name}")
 
 async def dump_json(ctx):
     db_copy = deepcopy(ctx.bot.db)

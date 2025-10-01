@@ -145,10 +145,10 @@ class Modbot(commands.Cog):
         # try to put user into report room
         else:
             guild: discord.Guild
-            main_or_secondary: str  # "main" means main report room, "secondary" means secondary report room, "voice" means voice report room
+            report_room_type: str  # "main" means main report room, "secondary" means secondary report room, "voice" means voice report room
             try:  # the user selects to which server they want to connect
                 self.bot.db['settingup'].append(msg.author.id)
-                guild, main_or_secondary = await self.server_select(msg)
+                guild, report_room_type = await self.server_select(msg)
             except Exception:
                 self.bot.db['settingup'].remove(msg.author.id)
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -158,12 +158,12 @@ class Modbot(commands.Cog):
             try:
                 if guild:
                     # check if they have been blocked by the /block command
-                    if main_or_secondary == "BLOCKED_USER":
+                    if report_room_type == "BLOCKED_USER":
                         return "BLOCKED_USER"
 
                     # assuming they haven't been blocked, continue here
                     await self.start_report_room(msg.author, guild, msg,
-                                                 main_or_secondary)  # bring user to report room
+                                                 report_room_type)  # bring user to report room
                 return "UserPassedThrough"  # if it worked
             except Exception:
                 await msg.author.send("WARNING: There's been an error. Setup will not continue.")
@@ -281,24 +281,42 @@ class Modbot(commands.Cog):
                 return None, None
             elif len(shared_guilds) == 1:
                 if shared_guilds[0].id in self.bot.db['guilds']:
-                    main_or_secondary: str
-                    guild, main_or_secondary = await self.ask_report_type(msg.author, shared_guilds[0])
-                    return guild, main_or_secondary
+                    report_room_type: str
+                    # guild, report_room_type = await self.ask_report_type(msg.author, shared_guilds[0])
+                    # return guild, report_room_type
+                    guild = shared_guilds[0]
 
                 else:
                     await msg.channel.send("We only share one guild, but that guild has not setup their report room"
                                            " yet. Please tell the mods to type `_setup` in some channel.")
                     return None, None
             else:
-                msg_text = {"en": "Hello, thank you for messaging me. Please select which "
-                                  "server want to connect to. To do this, reply with the `number` before your "
-                                  "server (for example, you can reply with the single number `3`.)",
-                            "es": "Hola, gracias por enviarme un mensaje. Por favor, selecciona a qué servidor "
-                                  "quieres conectarte. Para hacer esto, responda con el `número` antes de su "
-                                  "servidor (por ejemplo, puede responder sólo con el número `3`)",
-                            "ja": "こんにちは、メッセージありがとうございます。どのサーバーに接続したいかを選択してください。"
-                                  "これを行うには、以下のサーバーの一つの名前の前にある数字を書いて返信してください "
-                                  "(例えば、`3` という単一の数字で返信したら接続できます)。"}
+                msg_text = {
+                    "en": "Hello, thank you for messaging me. Please select which "
+                          "server you want to connect to. To do this, reply with the `number` before your "
+                          "server (for example, you can reply with the single number `3`).",
+                    
+                    "es": "Hola, gracias por enviarme un mensaje. Por favor, selecciona a qué servidor "
+                          "quieres conectarte. Para hacer esto, responde con el `número` antes de tu "
+                          "servidor (por ejemplo, puedes responder solo con el número `3`).",
+                    
+                    "ja": "こんにちは、メッセージありがとうございます。どのサーバーに接続したいかを選択してください。"
+                          "これを行うには、以下のサーバーの名前の前にある数字を書いて返信してください。"
+                          "(例えば、`3` という単一の数字で返信してください)。",
+                    
+                    "fr": "Bonjour, merci de m’avoir envoyé un message. Veuillez sélectionner à quel "
+                          "serveur vous voulez vous connecter. Pour cela, répondez avec le `numéro` placé "
+                          "avant votre serveur (par exemple, vous pouvez simplement répondre avec le numéro `3`).",
+                    
+                    "ar": "مرحبًا، شكرًا لإرسالك رسالة. من فضلك اختر إلى أي خادم تريد الاتصال. "
+                          "للقيام بذلك، أجب بالـ `رقم` الموجود قبل اسم الخادم الخاص بك "
+                          "(على سبيل المثال، يمكنك الرد فقط بالرقم `3`).",
+                    
+                    "zh": "你好，谢谢你发消息给我。请选择你想要连接的服务器。"
+                          "要做到这一点，请回复服务器名前的 `数字` "
+                          "(例如，你可以只回复数字 `3`)。"
+                }
+                
                 locale = hf.get_user_locale(msg.author.id)
                 msg_text = msg_text.get(locale, msg_text['en'])
                 index = 1
@@ -347,7 +365,7 @@ class Modbot(commands.Cog):
         if guild.id not in self.bot.db['guilds']:
             return None, None
 
-        # the output point of this function will check if main_or_secondary equals "BLOCKED_USER"
+        # the output point of this function will check if report_room_type equals "BLOCKED_USER"
         # if so, it'll propagate that error upwards so a report doesn't get started
         # it is checking if a server has blocked this user
         if guild:
@@ -355,8 +373,8 @@ class Modbot(commands.Cog):
             if msg.author.id in blocked_users_dict.get(guild.id, []):
                 return guild, "BLOCKED_USER"
 
-        guild, main_or_secondary = await self.ask_report_type(msg.author, guild)
-        return guild, main_or_secondary
+        guild, report_room_type = await self.ask_report_type(msg.author, guild)
+        return guild, report_room_type
 
     async def ask_report_type(self, author: Union[discord.User, discord.Member],
                               guild: discord.Guild) -> Union[tuple[None, None], tuple[Guild, str]]:
@@ -385,6 +403,14 @@ class Modbot(commands.Cog):
             else:
                 return None, None
             
+            # wait for previous interaction to finish the response before starting the
+            # new question to make sure the order of the messages appear properly
+            for _ in range(20):
+                # noinspection PyUnresolvedReferences
+                if interaction.response.is_done():
+                    break
+                await asyncio.sleep(0.2)
+                
             # Ask follow-up question about voice channels
             final_room_type = await self.ask_voice_channel_question(author, initial_room_type)
             return guild, final_room_type
@@ -406,7 +432,12 @@ class Modbot(commands.Cog):
         if not author.dm_channel:
             await author.create_dm()
         
-        question_text = "Is this report related to the voice channels?"
+        question_text = {'en': "Is this report related to the voice channels?",
+                         'es': "¿Este reporte está relacionado con los canales de voz?",
+                         'jp': "この通報はボイスチャンネルに関係していますか？",
+                         'fr': "Ce signalement est-il lié aux salons vocaux ?",
+                         'ar': "هل هذا البلاغ متعلق بالقنوات الصوتية؟",
+                         'zh': "这个举报和语音频道有关吗？"}
         question_msg = await author.dm_channel.send(question_text, view=view)
         
         # Wait for the user to press a button
@@ -440,9 +471,10 @@ class Modbot(commands.Cog):
             else:
                 return initial_room_type
             
-    async def start_ban_appeal_room(self, author: discord.User, guild: discord.Guild, appeal_text: str, main_or_secondary: str):
+    async def start_ban_appeal_room(self, author: discord.User, guild: discord.Guild,
+                                    appeal_text: str, report_room_type: str):
         try:
-            report_channel, meta_channel = await hf.get_report_variables(guild, main_or_secondary, author)
+            report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
         except hf.EndEarly:
             return
         # Check if the bot has the permissions to send messages in the report channel and create threads.
@@ -457,7 +489,8 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                report_thread = await hf.create_report_thread(author, appeal_text, report_channel, ban_appeal=True)
+                report_thread = await hf.create_report_thread(author, appeal_text,
+                                                              report_channel, ban_appeal=True)
 
                 # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
                 await hf.repost_rai_modlog(report_thread)
@@ -492,14 +525,15 @@ class Modbot(commands.Cog):
             await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
-    async def start_report_room(self, author: discord.User, guild: discord.Guild, msg: Optional[discord.Message],
-                                main_or_secondary: str):
+    async def start_report_room(self, author: discord.User, guild: discord.Guild,
+                                msg: Optional[discord.Message],
+                                report_room_type: str):
         """Performs initial code for bringing a user's first message into the report room and setting up the
         connection between the user and the mods.
 
         If this report is a ban appeal from the ban appeals server, then msg will be None and ban_appeal will be True"""
         try:
-            report_channel, meta_channel = await hf.get_report_variables(guild, main_or_secondary, author)
+            report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
         except hf.EndEarly:
             return
 
@@ -522,7 +556,9 @@ class Modbot(commands.Cog):
             await asyncio.sleep(1)
 
             try:
-                report_thread = await hf.create_report_thread(author, msg.content, report_channel, ban_appeal=False)
+                voice = (report_room_type == 'voice')  # True if report_room_type == 'voice'
+                report_thread = await hf.create_report_thread(author, msg.content, report_channel,
+                                                              ban_appeal=False, voice_report=voice)
 
                 # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
                 await hf.repost_rai_modlog(report_thread)

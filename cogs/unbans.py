@@ -340,7 +340,7 @@ class Unbans(commands.Cog):
             return
         # noinspection PyTypeChecker
         cog: Modbot = self.bot.get_cog("Modbot")
-        await cog.start_ban_appeal_room(user, guild, appeal_text=appeal_msg_text, main_or_secondary="main")
+        await cog.start_ban_appeal_room(user, guild, appeal_text=appeal_msg_text, report_room_type="main")
 
 
 async def setup(bot):
