@@ -438,7 +438,9 @@ class Modbot(commands.Cog):
                          'fr': "Ce signalement est-il lié aux salons vocaux ?",
                          'ar': "هل هذا البلاغ متعلق بالقنوات الصوتية؟",
                          'zh': "这个举报和语音频道有关吗？"}
-        question_msg = await author.dm_channel.send(question_text, view=view)
+        question_msg = await author.dm_channel.send(question_text.get(hf.get_user_locale(author.id),
+                                                                      question_text['en']),
+                                                    view=view)
         
         # Wait for the user to press a button
         def check_for_voice_button_press(i):
