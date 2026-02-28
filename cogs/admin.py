@@ -35,40 +35,6 @@ SP_SERV_ID = 243838819743432704
 RY_TEST_SERV_ID = 275146036178059265
 
 
-def is_admin(ctx):
-    """Checks if you are an admin in the guild you're running a command in"""
-    if not ctx.guild:
-        return False
-
-    if ctx.channel.permissions_for(ctx.author).administrator:
-        return True
-
-    guilds = ctx.bot.db['guilds']
-    if ctx.guild.id not in guilds:
-        return False
-
-    guild_config = guilds[ctx.guild.id]
-    if 'mod_role' not in guild_config or guild_config['mod_role'] is None:
-        return False
-
-    mod_role = ctx.guild.get_role(guild_config['mod_role'])
-    if mod_role is None:
-        return False
-
-    # # allow use of _send command in staff categories in spanish server
-    # if ctx.command.name == "send":
-    #     if ctx.channel.category.id in [817780000807583774, 1082581865065631754]:
-    #         return True
-
-    # special hardcode for ccm role on spanish server
-    sp_serv_ccm_role = ctx.guild.get_role(1049433426001920000)  # community content manager role
-    if sp_serv_ccm_role in ctx.author.roles:
-        return True
-
-    # otherwise just check normal mod role
-    return mod_role in ctx.author.roles
-
-
 async def reinitialize_buttons(admin):
     # example DB:
     # {
@@ -97,7 +63,7 @@ class Admin(commands.Cog):
         utils.asyncio_task(reinitialize_buttons, self)
 
     async def cog_check(self, ctx):
-        return is_admin(ctx)
+        return hf.is_admin(ctx)
 
     # @commands.Cog.listener()
     # async def on_ready(self):
@@ -206,42 +172,6 @@ class Admin(commands.Cog):
             thread_info['not_anonymous'] = False
             await ctx.send("You are now once again anonymous. If you sent any messages since the last time someone "
                            "inputted the command, the reporter will have been shown your username.")
-
-    @commands.command()
-    async def send(self, ctx: commands.Context, user_id: int, *, msg: str):
-        """Sends a message to the channel ID specified"""
-        target = self.bot.get_channel(user_id)
-        if not target:
-            target = self.bot.get_user(user_id)
-            if not target:
-                await ctx.send("Invalid ID")
-                return
-
-        # trying to send to any server channel
-        if hasattr(target, "guild"):
-            if target.guild != ctx.guild:
-                await ctx.send("You can only send messages to channels in this server.")
-                return
-
-        # trying to send to a user
-        elif isinstance(target, discord.User):
-            appeal_server = self.bot.get_guild(985963522796183622)
-            if target not in ctx.guild.members and target not in appeal_server.members:
-                await ctx.send("You can only send messages to users in this server.")
-                return
-
-        try:
-            await target.send(f"Message from the mods of {ctx.guild.name}: {msg}")
-        except discord.Forbidden as e:
-            try:
-                await ctx.send(f"I can't send messages to that user. {e}")
-            except discord.Forbidden:
-                pass
-        else:
-            try:
-                await ctx.message.add_reaction("✅")
-            except (discord.Forbidden, discord.NotFound):
-                pass
     
     async def report_button_callback(self, button_interaction: discord.Interaction):
         # noinspection PyTypeChecker
