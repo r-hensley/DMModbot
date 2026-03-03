@@ -12,7 +12,8 @@ class Submod(commands.Cog):
         self.bot = bot
 
     async def cog_check(self, ctx):
-        return hf.is_submod(ctx)
+        r = hf.is_submod(ctx)
+        return r
 
     @commands.command()
     async def set_submod_role(self, ctx, role: discord.Role):
