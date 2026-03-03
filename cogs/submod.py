@@ -23,12 +23,13 @@ class Submod(commands.Cog):
     @commands.command()
     async def send(self, ctx: commands.Context, user_id: str, *, msg: str):
         """Sends a message to the channel ID specified"""
-        user_id = int(re.match(r'^<?[@#]?(\d{17,22})>?$', str(user_id)).group(1))
-        target = self.bot.get_channel(user_id)
+        user_id_match = re.match(r'^<?[@#]?(\d{17,22})>?$', str(user_id))
+        _user_id = int(user_id_match.group(1)) if user_id_match else None
+        target = self.bot.get_channel(_user_id)
         if not target:
-            target = self.bot.get_user(user_id)
+            target = self.bot.get_user(_user_id)
             if not target:
-                await ctx.send("Invalid ID")
+                await ctx.send(f"Invalid ID: {user_id}")
                 return
 
         # trying to send to any server channel

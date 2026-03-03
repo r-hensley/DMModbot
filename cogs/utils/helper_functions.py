@@ -914,11 +914,13 @@ def is_submod(ctx):
         return True
 
     submod_roles = []
+
     try:
-        for r_id in here.bot.db['submod_role'][ctx.guild.id]['id']:
-            submod_roles.append(ctx.guild.get_role(r_id))
+        r_id = here.bot.db['submod_role'][ctx.guild.id]['id']
     except KeyError:
         return
+    else:
+        submod_roles.append(ctx.guild.get_role(r_id))
 
     for role in submod_roles:
         if role in ctx.author.roles:
