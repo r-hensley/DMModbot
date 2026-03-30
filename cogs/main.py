@@ -28,7 +28,7 @@ class Main(commands.Cog):
         await self.bot.log_channel.send('Bot loaded')
         await self.bot.change_presence(activity=discord.Game('DM me to talk to mods'))
 
-        if not hasattr(self, "recently_in_report_room"):
+        if not hasattr(self.bot, "recently_in_report_room"):
             self.bot.recently_in_report_room = {}
             
         # for thread_info in self.db['reports'].values():
@@ -43,6 +43,10 @@ class Main(commands.Cog):
         
         if 'reports' not in self.bot.db:
             self.bot.db['reports'] = {}
+        if 'buttons' not in self.bot.db:
+            self.bot.db['buttons'] = {}
+        if 'recent_reports' not in self.bot.db:
+            self.bot.db['recent_reports'] = {}
 
     @tasks.loop(minutes=1)
     async def autosave_db(self):

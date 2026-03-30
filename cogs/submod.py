@@ -42,7 +42,8 @@ class Submod(commands.Cog):
         # trying to send to a user
         elif isinstance(target, discord.User):
             appeal_server = self.bot.get_guild(985963522796183622)
-            if target not in ctx.guild.members and target not in appeal_server.members:
+            appeal_server_members = appeal_server.members if appeal_server else []
+            if target not in ctx.guild.members and target not in appeal_server_members:
                 await ctx.send("You can only send messages to users in this server.")
                 return
 

@@ -72,8 +72,8 @@ class Modbot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
         # dict w/ key ID and value of last left report room time
-        if not hasattr(self, "recently_in_report_room"):
-            self.recently_in_report_room = {}
+        if not hasattr(self.bot, "recently_in_report_room"):
+            self.bot.recently_in_report_room = {}
 
     # main code is here
     @commands.Cog.listener()
@@ -91,6 +91,7 @@ class Modbot(commands.Cog):
                 if user_status_result == "BLOCKED_USER":
                     await msg.reply("There has been some kind of error in joining that server's report room. Please "
                                     "contact the mods directly.")
+                    return
                 # all the below statuses are expected and should be handled in the receive_users() function
                 if user_status_result in ['AlreadyInReport', 'CurrentlySettingUp']:
                     # pass user to "find_current_guild() and potentially send_message()
@@ -391,8 +392,11 @@ class Modbot(commands.Cog):
         """After a user selects a server, this function will ask them which kind of report they want to make"""
 
         # below function defines and sets up four buttons for the user to select what kind of report they want to make
-        report_button, account_q_button, server_q_button, cancel_button = \
-            await hf.setup_confirm_guild_buttons(guild, author)
+        buttons = await hf.setup_confirm_guild_buttons(guild, author)
+        if not buttons or len(buttons) != 4:
+            return None, None
+
+        report_button, account_q_button, server_q_button, cancel_button = buttons
 
         # wait for the user to press a button
         def check_for_button_press(i):
@@ -440,7 +444,10 @@ class Modbot(commands.Cog):
         
         # Send the question to the user
         if not author.dm_channel:
-            await author.create_dm()
+            try:
+                await author.create_dm()
+            except (discord.Forbidden, discord.HTTPException):
+                return initial_room_type
         
         question_text = {'en': "Is this report related to the voice channels?",
                          'es': "¿Este reporte está relacionado con los canales de voz?",
@@ -490,7 +497,10 @@ class Modbot(commands.Cog):
         except hf.EndEarly:
             return
         # Check if the bot has the permissions to send messages in the report channel and create threads.
-        await hf.check_bot_perms(report_channel, meta_channel, guild, author)
+        try:
+            await hf.check_bot_perms(report_channel, meta_channel, guild, author)
+        except hf.EndEarly:
+            return
         async def open_room():
             if not author.dm_channel:
                 await author.create_dm()
@@ -551,7 +561,10 @@ class Modbot(commands.Cog):
             return
 
         # Check if the bot has the permissions to send messages in the report channel and create threads.
-        await hf.check_bot_perms(report_channel, meta_channel, guild, author)
+        try:
+            await hf.check_bot_perms(report_channel, meta_channel, guild, author)
+        except hf.EndEarly:
+            return
 
         # Deny users who come to the bot without language roles (they're probably asking how to get roles)
         try:
@@ -713,13 +726,30 @@ class Modbot(commands.Cog):
         """Notify the user and the mods that the room has been closed."""
         is_source_thread = isinstance(source, discord.Thread)
         is_dest_thread = isinstance(dest, discord.Thread)
+        targets = []
+        if source is not None:
+            targets.append((source, is_source_thread))
+        if dest is not None and dest is not source:
+            targets.append((dest, is_dest_thread))
         if error:
-            try:
-                await source.send("WARNING: There's been some kind of error. I will close the room. Please try again.")
-                await dest.send("WARNING: There's been some kind of error. I will close the room. Please try again.")
-            except discord.Forbidden:
-                pass
+            for target, _ in targets:
+                try:
+                    await target.send("WARNING: There's been some kind of error. I will close the room. Please try again.")
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
+                    pass
         else:
+            invisible_character = "â €"  # To avoid whitespace trimming
+            invisible_character = "\u2800"
+            for index, (target, is_thread) in enumerate(targets):
+                try:
+                    spacing = "\n\n" if index == 0 else "\n\n\n"
+                    content = f"**{invisible_character}{spacing}__{' ' * 70}__**\n**" \
+                              f"Thank you, I have closed the room." \
+                              f"{' Messages in this thread will no longer be sent to the user' if is_thread else ''}**"
+                    await target.send(content)
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
+                    pass
+            return
             try:
                 invisible_character = "⠀"  # To avoid whitespace trimming
                 s1 = f"**{invisible_character}\n\n__{' ' * 70}__**\n**" \
@@ -784,11 +814,25 @@ class Modbot(commands.Cog):
                 thread_info = thread_id_to_thread_info[thread_id]
                 user = self.bot.get_user(thread_info['user_id'])
                 if user is None:
+                    try:
+                        user = await self.bot.fetch_user(thread_info['user_id'])
+                    except (discord.NotFound, discord.HTTPException, discord.Forbidden):
+                        user = None
+
+                if user is None:
                     await after.send("Failed to get the user who created this report.")
                     del self.bot.db['reports'][thread_info["user_id"]]
                     await hf.dump_json()
                     return
-                await self.end_report(OpenReport(thread_info, user, after, user.dm_channel, after), True)
+
+                source = user.dm_channel
+                if source is None:
+                    try:
+                        source = await user.create_dm()
+                    except (discord.NotFound, discord.HTTPException, discord.Forbidden):
+                        source = after
+
+                await self.end_report(OpenReport(thread_info, user, after, source, after), True)
 
             # else, if the thread at least is in the report room, but not an active thread, still close it
             elif hf.is_thread_in_a_report_channel(after):
@@ -812,7 +856,7 @@ class Modbot(commands.Cog):
         if not currently_in_settingup and not currently_in_report_room:
             timestamp_of_last_report_end = getattr(self.bot, "recently_in_report_room", {}).get(msg.author.id, 0)
             time_since_report = discord.utils.utcnow().timestamp() - timestamp_of_last_report_end
-            if msg.author in self.bot.recently_in_report_room and time_since_report < report_timeout:
+            if msg.author.id in self.bot.recently_in_report_room and time_since_report < report_timeout:
                 time_remaining = int(report_timeout - time_since_report)
                 return time_remaining
 

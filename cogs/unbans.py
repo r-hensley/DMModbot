@@ -25,7 +25,7 @@ async def reinitialize_buttons(unbans):
     # 'main_start_button': {985967093411368981: 1233600929740230667}
     # }
     await unbans.bot.wait_until_ready()
-    for button_name, button_dict in unbans.bot.db['buttons'].items():
+    for button_name, button_dict in unbans.bot.db.get('buttons', {}).items():
         if button_name == 'start_appeal_button':
             for channel_id, msg_id in button_dict.items():
                 print(f"Setting up appeal button view for {channel_id}, {msg_id}")

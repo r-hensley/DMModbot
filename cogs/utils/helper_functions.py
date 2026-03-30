@@ -23,6 +23,7 @@ from cogs.utils.BotUtils import bot_utils as utils
 here = sys.modules[__name__]
 here.bot = None
 here.loop = None
+here.dump_json_lock = None
 
 SP_SERV_ID = 243838819743432704
 JP_SERV_ID = 189571157446492161
@@ -38,6 +39,9 @@ def setup(bot: commands.Bot, loop):
         here.loop = loop
     else:
         pass
+
+    if here.dump_json_lock is None:
+        here.dump_json_lock = asyncio.Lock()
 
 
 class EndEarly(Exception):
@@ -60,7 +64,8 @@ def _dump_json_sync():
 
 
 async def dump_json():
-    await asyncio.to_thread(_dump_json_sync)
+    async with here.dump_json_lock:
+        await asyncio.to_thread(_dump_json_sync)
 
 
 def make_tags_list_for_forum_post(forum: discord.ForumChannel, add: list[str] = None, remove: list[str] = None):
@@ -389,10 +394,11 @@ async def log_record_of_report(thread: discord.Thread, author: discord.User):
     bot.db['recent_reports'][thread.guild.id][author.id]"""
     guild_id = thread.guild.id
     author_id = author.id
-    if guild_id not in here.bot.db['recent_reports']:
-        here.bot.db['recent_reports'][guild_id] = {}
-    if author_id not in here.bot.db['recent_reports'][guild_id]:
-        here.bot.db['recent_reports'][guild_id][author_id] = []
+    recent_reports = here.bot.db.setdefault('recent_reports', {})
+    if guild_id not in recent_reports:
+        recent_reports[guild_id] = {}
+    if author_id not in recent_reports[guild_id]:
+        recent_reports[guild_id][author_id] = []
     
     # thread_info: {'thread_id': int, 'timestamp': int, 'summary': str}
     thread_info = {'thread_id': thread.id, 'timestamp': int(datetime.utcnow().timestamp())}
@@ -417,9 +423,9 @@ async def log_record_of_report(thread: discord.Thread, author: discord.User):
                 summary = summary.replace('\n', '. ')
                 thread_info['summary'] = summary
     
-    here.bot.db['recent_reports'][guild_id][author_id].append(thread_info)
-    if len(here.bot.db['recent_reports'][guild_id][author_id]) > 5:
-        here.bot.db['recent_reports'][guild_id][author_id].pop(0)
+    recent_reports[guild_id][author_id].append(thread_info)
+    if len(recent_reports[guild_id][author_id]) > 5:
+        recent_reports[guild_id][author_id].pop(0)
         
         
 def add_recent_report_info(thread_text: str, author_id: int, guild_id: int) -> str:
@@ -665,11 +671,14 @@ async def check_bot_perms(report_channel, meta_channel, guild, author):
                                     f"to open a report here, I need the `Create Public Threads` permission "
                                     f"in this channel. Please give me that permission and tell the user "
                                     f"to try again.")
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
             pass
-        await author.send("The report room for this server is not properly setup. Please directly message "
-                          "the mods. (I don't have permission to send messages in the report room.)")
-        return
+        try:
+            await author.send("The report room for this server is not properly setup. Please directly message "
+                              "the mods. (I don't have permission to send messages in the report room.)")
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        raise EndEarly
 
 
 async def check_if_valid_msg(msg):
