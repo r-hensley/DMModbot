@@ -1,24 +1,17 @@
 import asyncio
 import importlib
-import os
 import io
 import traceback
 import textwrap
-import shutil
-import json
 import sys
-from copy import deepcopy
 from contextlib import redirect_stdout
 from typing import Optional
 
 import discord
 from discord.ext import commands
 
-from .utils.db_utils import int_keys_to_str_keys
 from .utils import helper_functions as hf
 from cogs.utils.BotUtils import bot_utils as utils
-
-dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 RYRY_ID = 202995638860906496
 ABELIAN_ID = 414873201349361664  # Ryry alt
@@ -206,7 +199,7 @@ class Owner(commands.Cog):
 
     @commands.command()
     async def sdb(self, ctx):
-        await dump_json(ctx)
+        await hf.dump_json()
         try:
             await ctx.message.add_reaction('\u2705')
         except discord.NotFound:
@@ -380,19 +373,6 @@ class Owner(commands.Cog):
             
         await ctx.send(f"Setup {report_room_type} forum channel {forum_channel.mention} "
                        f"for {ctx.guild.name}")
-
-async def dump_json(ctx):
-    db_copy = deepcopy(ctx.bot.db)
-    if os.path.exists(f'{dir_path}/modbot_3.json'):
-        shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
-    if os.path.exists(f'{dir_path}/modbot_2.json'):
-        shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
-    if os.path.exists(f'{dir_path}/modbot.json'):
-        shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
-    with open(f'{dir_path}/modbot_temp.json', 'w') as write_file:
-        json.dump(int_keys_to_str_keys(db_copy), write_file, indent=4)
-    shutil.copy(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')
-
 
 async def setup(bot):
     await bot.add_cog(Owner(bot))

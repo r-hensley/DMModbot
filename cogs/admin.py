@@ -1,11 +1,9 @@
-import os
 from typing import Optional
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .owner import dump_json
 from .modbot import Modbot
 from .utils.db_utils import get_thread_id_to_thread_info
 from .utils import helper_functions as hf
@@ -78,7 +76,7 @@ class Admin(commands.Cog):
             if thread_info['guild_id'] == ctx.guild.id:
                 del self.bot.db['reports'][user_id]
         await ctx.send("I've cleared the guild report state.")
-        await dump_json(ctx)
+        await hf.dump_json()
 
     @commands.command()
     async def setup(self, ctx, secondary: str = ""):
@@ -110,7 +108,7 @@ class Admin(commands.Cog):
             guilds[ctx.guild.id]['secondary_channel'] = ctx.channel.id
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
-            await dump_json(ctx)
+            await hf.dump_json()
 
         elif secondary == 'voice':
             if 'channel' not in guilds.get(ctx.guild.id, {}):
@@ -121,13 +119,13 @@ class Admin(commands.Cog):
             guilds[ctx.guild.id]['voice_report_channel'] = ctx.channel.id
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
-            await dump_json(ctx)
+            await hf.dump_json()
 
         else:
             guilds[ctx.guild.id] = {'channel': ctx.channel.id, 'mod_role': guild_config['mod_role']}
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
-            await dump_json(ctx)
+            await hf.dump_json()
 
     @commands.command()
     async def setmodrole(self, ctx, *, role_name):
@@ -148,7 +146,7 @@ class Admin(commands.Cog):
             return None
         guild_config['mod_role'] = mod_role.id
         await ctx.send(f"Set the mod role to {mod_role.name} ({mod_role.id})")
-        await dump_json(ctx)
+        await hf.dump_json()
 
     @commands.command(aliases=['not_anon', 'non_anonymous', 'non_anon', 'reveal'])
     async def not_anonymous(self, ctx, *, no_args_allowed=None):
@@ -172,6 +170,7 @@ class Admin(commands.Cog):
             thread_info['not_anonymous'] = False
             await ctx.send("You are now once again anonymous. If you sent any messages since the last time someone "
                            "inputted the command, the reporter will have been shown your username.")
+        await hf.dump_json()
     
     async def report_button_callback(self, button_interaction: discord.Interaction):
         # noinspection PyTypeChecker

@@ -2,10 +2,11 @@ import logging
 import os
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import sys
 
 from cogs.utils.BotUtils import bot_utils as utils
+from .utils import helper_functions as hf
 
 
 class Main(commands.Cog):
@@ -13,6 +14,10 @@ class Main(commands.Cog):
         self.bot: commands.Bot = bot
         self.bot.tree.on_error = on_tree_error
         self.bot.on_error = self.on_error
+        self.autosave_db.start()
+
+    def cog_unload(self):
+        self.autosave_db.cancel()
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -38,6 +43,14 @@ class Main(commands.Cog):
         
         if 'reports' not in self.bot.db:
             self.bot.db['reports'] = {}
+
+    @tasks.loop(minutes=1)
+    async def autosave_db(self):
+        await hf.dump_json()
+
+    @autosave_db.before_loop
+    async def before_autosave_db(self):
+        await self.bot.wait_until_ready()
     
     @commands.Cog.listener()
     async def on_error(self, event: str, *args, **kwargs):

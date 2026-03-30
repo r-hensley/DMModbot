@@ -203,6 +203,7 @@ class Modbot(commands.Cog):
                                        "this report room.")
                 # delete the entry out of bot.db['reports']
                 del self.bot.db['reports'][thread_info["user_id"]]
+                await hf.dump_json()
                 return None  # can't find the user
 
             report_thread = msg.channel
@@ -231,6 +232,7 @@ class Modbot(commands.Cog):
             # just delete the entry out of bot.db['reports']
             if not report_thread:
                 del self.bot.db['reports'][msg.author.id]
+                await hf.dump_json()
                 return None
 
             # if I want code that tries to unarchive the thread, I can use this
@@ -532,6 +534,7 @@ class Modbot(commands.Cog):
         except Exception:
             if author.id in self.bot.db['reports']:
                 del self.bot.db['reports'][author.id]
+                await hf.dump_json()
             await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
@@ -599,6 +602,7 @@ class Modbot(commands.Cog):
         except Exception:
             if author.id in self.bot.db['reports']:
                 del self.bot.db['reports'][author.id]
+                await hf.dump_json()
             await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
@@ -750,6 +754,7 @@ class Modbot(commands.Cog):
         self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
 
         await hf.log_record_of_report(thread, open_report.user)
+        await hf.dump_json()
 
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
@@ -781,6 +786,7 @@ class Modbot(commands.Cog):
                 if user is None:
                     await after.send("Failed to get the user who created this report.")
                     del self.bot.db['reports'][thread_info["user_id"]]
+                    await hf.dump_json()
                     return
                 await self.end_report(OpenReport(thread_info, user, after, user.dm_channel, after), True)
 

@@ -1,8 +1,11 @@
 import asyncio
+import json
 import re
+import shutil
 from datetime import datetime
 from textwrap import dedent
 from typing import Optional, Union
+from copy import deepcopy
 
 import aiohttp
 import discord
@@ -40,6 +43,24 @@ def setup(bot: commands.Bot, loop):
 class EndEarly(Exception):
     """This exception is raised for example when the user types 'end' or 'close' in a report thread."""
     pass
+
+
+def _dump_json_sync():
+    dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+    db_copy = deepcopy(here.bot.db)
+    if os.path.exists(f'{dir_path}/modbot_3.json'):
+        shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
+    if os.path.exists(f'{dir_path}/modbot_2.json'):
+        shutil.copy(f'{dir_path}/modbot_2.json', f'{dir_path}/modbot_3.json')
+    if os.path.exists(f'{dir_path}/modbot.json'):
+        shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
+    with open(f'{dir_path}/modbot_temp.json', 'w') as write_file:
+        json.dump(db_copy, write_file, indent=4)
+    shutil.copy(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')
+
+
+async def dump_json():
+    await asyncio.to_thread(_dump_json_sync)
 
 
 def make_tags_list_for_forum_post(forum: discord.ForumChannel, add: list[str] = None, remove: list[str] = None):
@@ -258,6 +279,7 @@ async def add_report_to_db(author: discord.User, report_thread: discord.Thread):
         "mods": [],
         "not_anonymous": False,
     }
+    await dump_json()
 
 
 EXEMPTED_BOT_PREFIXES = ['_', ';', '.', ',', '>', '&', 't!', 't@', '$', '!', '?']
