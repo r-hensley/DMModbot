@@ -54,7 +54,7 @@ class ReportStatus(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def report_status_loop(self):
-        db_changed = False
+        db_changed = await self.prune_stale_reports()
 
         for guild_id, guild_config in self.bot.db.get("guilds", {}).items():
             guild = self.bot.get_guild(guild_id)
@@ -71,6 +71,23 @@ class ReportStatus(commands.Cog):
     @report_status_loop.before_loop
     async def before_report_status_loop(self):
         await self.bot.wait_until_ready()
+
+    async def prune_stale_reports(self) -> bool:
+        stale_user_ids = []
+
+        for user_id, report in list(self.bot.db.get("reports", {}).items()):
+            thread = self.bot.get_channel(report.get("thread_id", 0))
+            if not isinstance(thread, discord.Thread):
+                stale_user_ids.append(user_id)
+                continue
+
+            if thread.archived:
+                stale_user_ids.append(user_id)
+
+        for user_id in stale_user_ids:
+            self.bot.db["reports"].pop(user_id, None)
+
+        return bool(stale_user_ids)
 
     async def update_room_status(self, guild: discord.Guild, guild_config: dict, room_type: str) -> bool:
         room_meta = ROOM_TYPES[room_type]
@@ -132,7 +149,18 @@ class ReportStatus(commands.Cog):
 
         stats_entries: list[ThreadStats] = []
         for report in sorted(active_reports, key=lambda item: item.get("thread_id", 0)):
-            stats_entries.append(await self.collect_thread_stats(guild, report))
+            entry = await self.collect_thread_stats(guild, report)
+            if entry.thread is None or entry.user is None:
+                continue
+            stats_entries.append(entry)
+
+        embed.description = (
+            f"Active DB reports in {getattr(report_channel, 'mention', '#unknown')}: `{len(stats_entries)}`"
+        )
+
+        if not stats_entries:
+            embed.add_field(name="Active reports", value="None", inline=False)
+            return embed
 
         summary_lines = []
         for entry in stats_entries:
@@ -225,9 +253,6 @@ class ReportStatus(commands.Cog):
 
     @staticmethod
     def format_flagged_state(entry: ThreadStats) -> str:
-        if entry.thread is None:
-            return f"`{entry.thread_info['thread_id']}` is still in the DB but the thread no longer exists."
-
         problems = []
         if entry.thread.archived:
             problems.append("archived")
