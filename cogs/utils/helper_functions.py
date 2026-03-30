@@ -28,6 +28,16 @@ here.dump_json_lock = None
 SP_SERV_ID = 243838819743432704
 JP_SERV_ID = 189571157446492161
 
+FORUM_META_THREAD_NAME = "Meta Discussion"
+FORUM_DEFAULT_TAGS = {
+    'Complete': '✅',
+    'Open': '❗',
+    'Closed (Unresolved)': '⏹️',
+    'Ban Appeal': '🚷',
+    'Voice': '🗣️',
+    'Text': '🔤'
+}
+
 def setup(bot: commands.Bot, loop):
     """This command is run in the setup_hook function in Modbot.py"""
     if here.bot is None:
@@ -66,6 +76,63 @@ def _dump_json_sync():
 async def dump_json():
     async with here.dump_json_lock:
         await asyncio.to_thread(_dump_json_sync)
+
+
+async def ensure_forum_meta_thread(forum_channel: discord.ForumChannel) -> Optional[discord.Thread]:
+    meta_thread = None
+    for thread in forum_channel.threads:
+        if thread.flags.pinned:
+            if thread.name == FORUM_META_THREAD_NAME:
+                meta_thread = thread
+            else:
+                raise ValueError(
+                    f"I found a pinned thread in that channel already, but it doesn't match the name I expect "
+                    f"({FORUM_META_THREAD_NAME}). Please unpin it and rerun this command."
+                )
+            break
+
+    if meta_thread:
+        return meta_thread
+
+    txt = ("This is the meta discussion post for the forum. "
+           "Please use this post to discuss anything related to "
+           "the forum.")
+    meta_thread = (await forum_channel.create_thread(name=FORUM_META_THREAD_NAME, content=txt)).thread
+
+    try:
+        await meta_thread.edit(pinned=True)
+    except discord.HTTPException as e:
+        if e.code == 30047:
+            return None
+        raise
+
+    return meta_thread
+
+
+async def ensure_forum_tags(forum_channel: discord.ForumChannel):
+    for name, emoji in FORUM_DEFAULT_TAGS.items():
+        try:
+            await forum_channel.create_tag(name=name, emoji=discord.PartialEmoji.from_str(emoji))
+        except discord.HTTPException as e:
+            if e.code == 40061:
+                continue
+            raise
+
+
+def save_forum_report_config(guild_config: dict, report_room_type: str,
+                             forum_channel_id: int, meta_thread_id: int):
+    if report_room_type == 'main':
+        guild_config['channel'] = forum_channel_id
+        guild_config['meta_channel'] = meta_thread_id
+    elif report_room_type == 'secondary':
+        guild_config['secondary_channel'] = forum_channel_id
+        guild_config['secondary_meta_channel'] = meta_thread_id
+    elif report_room_type == 'voice':
+        guild_config['voice_report_channel'] = forum_channel_id
+        guild_config['voice_report_meta_channel'] = meta_thread_id
+    else:
+        raise ValueError(f"Unknown report room type ({report_room_type}). Please try again and choose 'main', "
+                         f"'secondary', or 'voice'. ")
 
 
 def make_tags_list_for_forum_post(forum: discord.ForumChannel, add: list[str] = None, remove: list[str] = None):
@@ -276,11 +343,12 @@ async def notify_user_of_report_connection(author: discord.User):
                                           color=0x00FF00))
 
 
-async def add_report_to_db(author: discord.User, report_thread: discord.Thread):
+async def add_report_to_db(author: discord.User, report_thread: discord.Thread, report_room_type: str = "main"):
     here.bot.db['reports'][author.id] = {
         "user_id": author.id,
         "thread_id": report_thread.id,
         "guild_id": report_thread.guild.id,
+        "report_room_type": report_room_type,
         "mods": [],
         "not_anonymous": False,
     }

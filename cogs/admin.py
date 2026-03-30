@@ -96,6 +96,10 @@ class Admin(commands.Cog):
             await ctx.send("Please configure the mod role first using `_setmodrole`.")
             return
 
+        if await self.try_reinitialize_forum_setup(ctx, guild_config, secondary):
+            await hf.dump_json()
+            return
+
         main_msg = (f"I've set the report channel as this channel. Now if someone messages me I'll deliver "
                     f"their messages here.\n\nIf you'd like to pin the following message, it's some instructions "
                     f"on helpful commands for the bot")
@@ -127,6 +131,35 @@ class Admin(commands.Cog):
             await ctx.send(main_msg)
             await ctx.send(INSTRUCTIONS)
             await hf.dump_json()
+
+    async def try_reinitialize_forum_setup(self, ctx, guild_config: dict, secondary: str) -> bool:
+        channel = ctx.channel
+        if not isinstance(channel, discord.Thread):
+            return False
+        if channel.name != hf.FORUM_META_THREAD_NAME:
+            return False
+        if not isinstance(channel.parent, discord.ForumChannel):
+            return False
+
+        guild_entry = self.bot.db['guilds'][ctx.guild.id]
+        forum_channel = channel.parent
+
+        if forum_channel.permissions_for(ctx.guild.me).manage_channels:
+            await hf.ensure_forum_tags(forum_channel)
+
+        room_type = secondary.casefold().strip() or "main"
+        if room_type == "secondary" and 'channel' not in guild_entry:
+            await ctx.send("Please set up the main report room first by typing just `_setup`.")
+            return True
+        if room_type == "voice" and 'channel' not in guild_entry:
+            await ctx.send("Please set up the main report room first by typing just `_setup`.")
+            return True
+        if room_type not in {"main", "secondary", "voice"}:
+            return False
+
+        hf.save_forum_report_config(guild_entry, room_type, forum_channel.id, channel.id)
+        await ctx.send(f"Reinitialized the {room_type} forum report room from this Meta Discussion thread.")
+        return True
 
     @commands.command()
     async def setmodrole(self, ctx, *, role_name):

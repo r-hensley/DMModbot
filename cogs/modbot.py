@@ -523,7 +523,7 @@ class Modbot(commands.Cog):
                 await report_thread.send(vertical_space)
 
                 # add info about user to self.bot.db['reports']
-                await hf.add_report_to_db(author, report_thread)
+                await hf.add_report_to_db(author, report_thread, report_room_type)
 
                 # send first message, notify user in DMs that the message successfully sent
                 await hf.deliver_ban_appeal_msg_to_thread(report_thread, author, appeal_text)
@@ -595,7 +595,7 @@ class Modbot(commands.Cog):
                 await report_thread.send(vertical_space)
 
                 # add info about user to self.bot.db['reports']
-                await hf.add_report_to_db(author, report_thread)
+                await hf.add_report_to_db(author, report_thread, report_room_type)
 
                 # send first message, notify user in DMs that the message successfully sent
                 await hf.deliver_first_report_msg_to_thread(report_thread, author, msg)

@@ -294,6 +294,7 @@ class Owner(commands.Cog):
         bot.db['guilds']['meta_channel']
         2) Create tags: Complete (✅), Open (❗), Closed (Not Resolved) (⏹️),
         and Ban Appeal (🚷)"""
+        self.bot.db['guilds'].setdefault(ctx.guild.id, {})
         forum_channel = self.bot.get_channel(forum_channel_id)
         perms = forum_channel.permissions_for(ctx.guild.me)
         if not perms.create_public_threads:
@@ -308,6 +309,28 @@ class Owner(commands.Cog):
             await ctx.send(f"Bot doesn't have the permission to manage threads in {forum_channel.mention} "
                            f"(it's necessary for being able to archive threads!)")
             return
+
+        try:
+            meta_thread = await hf.ensure_forum_meta_thread(forum_channel)
+        except ValueError as exc:
+            await ctx.send(str(exc))
+            return
+
+        if not meta_thread:
+            return
+
+        await hf.ensure_forum_tags(forum_channel)
+
+        try:
+            hf.save_forum_report_config(self.bot.db['guilds'][ctx.guild.id], report_room_type,
+                                        forum_channel_id, meta_thread.id)
+        except ValueError as exc:
+            await ctx.send(str(exc))
+            return
+
+        await ctx.send(f"Setup {report_room_type} forum channel {forum_channel.mention} "
+                       f"for {ctx.guild.name}")
+        return
             
         # check for a thread that is already pinned, and reuse it if so
         thread_name = "Meta Discussion"

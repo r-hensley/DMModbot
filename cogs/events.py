@@ -106,11 +106,21 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         ban_appeals_guild_id = int(os.getenv("BAN_APPEALS_GUILD_ID") or 0)
+        if not ban_appeals_guild_id:
+            return
+
         ban_appeals_guild = self.bot.get_guild(ban_appeals_guild_id)
+        if not ban_appeals_guild:
+            return
+
         servers_category = discord.utils.find(lambda c: c.name.casefold() == 'servers', ban_appeals_guild.categories)
         guild_id_to_role_dict: dict[int, discord.Role] = {}
+        if not servers_category:
+            return
         
         server_moderator_role = ban_appeals_guild.get_role(1024206163715297341)
+        if not server_moderator_role:
+            return
         
         for role in ban_appeals_guild.roles:
             # most role names will be named after a guild ID
