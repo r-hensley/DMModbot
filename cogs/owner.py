@@ -212,6 +212,19 @@ class Owner(commands.Cog):
         sys.stdout.flush()
         await ctx.message.add_reaction('🚽')
 
+    @commands.command()
+    async def pull(self, ctx):
+        """Safely fast-forward the bot repo."""
+        try:
+            result = await utils.safe_git_pull()
+        except RuntimeError as exc:
+            await ctx.send(f"**`ABORTED:`** {exc}")
+            return
+
+        if len(result) > 1900:
+            result = result[:1900] + "\n...truncated"
+        await ctx.send(f"```{result}```")
+
     @commands.command(aliases=['quit'])
     async def kill(self, ctx):
         """Modbot is a killer"""
