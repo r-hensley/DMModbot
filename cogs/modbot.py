@@ -191,10 +191,18 @@ class Modbot(commands.Cog):
             thread_info = thread_id_to_thread_info[msg.channel.id]
 
             # now for sure you're messaging in the report room of a guild with an active report happening
-            current_user: discord.User = self.bot.get_user(thread_info["user_id"])
+            current_user: Optional[discord.User] = self.bot.get_user(thread_info["user_id"])
             if not current_user:
+                try:
+                    current_user = await self.bot.fetch_user(thread_info["user_id"])
+                except (discord.NotFound, discord.HTTPException, discord.Forbidden):
+                    current_user = None
+
+            if not current_user:
+                await msg.channel.send("I couldn't find the user connected to this report anymore, so I am closing "
+                                       "this report room.")
                 # delete the entry out of bot.db['reports']
-                del self.bot.db['reports'][msg.author.id]
+                del self.bot.db['reports'][thread_info["user_id"]]
                 return None  # can't find the user
 
             report_thread = msg.channel
