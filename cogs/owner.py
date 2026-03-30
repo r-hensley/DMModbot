@@ -5,6 +5,7 @@ import traceback
 import textwrap
 import sys
 from contextlib import redirect_stdout
+from subprocess import PIPE, run, TimeoutExpired
 from typing import Optional
 
 import discord
@@ -345,71 +346,36 @@ class Owner(commands.Cog):
         await ctx.send(f"Setup {report_room_type} forum channel {forum_channel.mention} "
                        f"for {ctx.guild.name}")
         return
-            
-        # check for a thread that is already pinned, and reuse it if so
-        thread_name = "Meta Discussion"
-        meta_thread = None
-        for thread in forum_channel.threads:
-            if thread.flags.pinned:
-                if thread.name == thread_name:
-                    meta_thread = thread
-                else:
-                    await ctx.send(f"I found a pinned thread in that channel already, but it "
-                                   f"doesn't match the name I expect ({thread_name}). Please "
-                                   f"unpin it and rerun this command.")
-                    return
-                break
-        
-        if not meta_thread:
-            # create the meta discussion post
-            txt = ("This is the meta discussion post for the forum. "
-                   "Please use this post to discuss anything related to "
-                  "the forum.")
-            meta_thread = (await forum_channel.create_thread(name=thread_name, content=txt)).thread
 
-            try:
-                await meta_thread.edit(pinned=True)
-            except discord.HTTPException as e:
-                if e.code == 30047:
-                    # discord.errors.HTTPException: 400 Bad Request (error code: 30047):
-                    # Maximum number pinned threads in this channel reached (1).
-                    # await ctx.send(f"Couldn't pin the meta post in {forum_channel.mention}
-                    # because forum post already "
-                    #                f"has one pinned post. Please remove that!")
-                    return
-            
-        # create the tags
-        tags = {'Complete': '✅',
-                'Open': '❗',
-                'Closed (Unresolved)': '⏹️',
-                'Ban Appeal': '🚷',
-                'Voice': '🗣️',
-                'Text': '🔤'}
-        for name, emoji in tags.items():
-            try:
-                await forum_channel.create_tag(name=name, emoji=discord.PartialEmoji.from_str(emoji))
-            except discord.HTTPException as e:
-                if e.code == 40061:
-                    # "Tag names must be unique"
-                    # tag already exists
-                    continue
-            
-        # update bot.db['guilds']['meta_channel'] with the new channel id
-        if report_room_type == 'main':
-            self.bot.db['guilds'][ctx.guild.id]['channel'] = forum_channel_id
-            self.bot.db['guilds'][ctx.guild.id]['meta_channel'] = meta_thread.id
-        elif report_room_type == 'secondary':
-            self.bot.db['guilds'][ctx.guild.id]['secondary_channel'] = forum_channel_id
-            self.bot.db['guilds'][ctx.guild.id]['secondary_meta_channel'] = meta_thread.id
-        elif report_room_type == 'voice':
-            self.bot.db['guilds'][ctx.guild.id]['voice_report_channel'] = forum_channel_id
-            self.bot.db['guilds'][ctx.guild.id]['voice_report_meta_channel'] = meta_thread.id
-        else:
-            await ctx.send(f"Unknown report room type ({report_room_type}). Please try again and "
-                           f"choose 'main', 'secondary', or 'voice'. ")
-            
-        await ctx.send(f"Setup {report_room_type} forum channel {forum_channel.mention} "
-                       f"for {ctx.guild.name}")
+    @commands.command()
+    async def os(self, ctx, *, command):
+        """
+        Calls an os command using subprocess.run()
+        This version will directly return the results of the command as text
+        Command: The command you wish to input into your system
+        """
+        try:
+            result = run(command,
+                         stdout=PIPE,
+                         stderr=PIPE,
+                         universal_newlines=True,
+                         shell=True,
+                         timeout=15,
+                         check=False)
+        except TimeoutExpired:
+            await utils.safe_send(ctx, "Command timed out")
+            return
+        result = f"{result.stdout}\n{result.stderr}"
+        long = len(result) > 1994
+        short_result = result[:1994]
+        short_result = f"```{short_result}```"
+
+        await utils.safe_send(ctx, short_result)
+
+        if long:
+            buffer = io.BytesIO(bytes(result, "utf-8"))
+            f = discord.File(buffer, filename="text.txt")
+            await ctx.send("Result was over 2000 characters", file=f)
 
 async def setup(bot):
     await bot.add_cog(Owner(bot))
