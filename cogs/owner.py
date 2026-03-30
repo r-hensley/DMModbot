@@ -213,10 +213,11 @@ class Owner(commands.Cog):
         await ctx.message.add_reaction('🚽')
 
     @commands.command()
-    async def pull(self, ctx):
+    async def pull(self, ctx, mode: str = ""):
         """Safely fast-forward the bot repo."""
+        force = mode.casefold().strip() == "force"
         try:
-            result = await utils.safe_git_pull()
+            result = await utils.safe_git_pull(force=force)
         except RuntimeError as exc:
             await ctx.send(f"**`ABORTED:`** {exc}")
             return
