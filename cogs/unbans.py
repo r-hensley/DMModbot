@@ -220,7 +220,7 @@ class Unbans(commands.Cog):
             await button_interaction.response.send_message(f"<@{self.bot.owner_id}>: Please set the topic of this "
                                                            "channel to just a guild ID and nothing else.")
             return
-        
+            
         if not guild:
             await button_interaction.response.send_message("There's been some error and I can't find this guild "
                                                            "anymore. Maybe they've kicked me or the guild has been "
@@ -340,7 +340,8 @@ class Unbans(commands.Cog):
             return
         # noinspection PyTypeChecker
         cog: Modbot = self.bot.get_cog("Modbot")
-        await cog.start_ban_appeal_room(user, guild, appeal_text=appeal_msg_text, report_room_type="main")
+        await cog.start_ban_appeal_room(user, guild, appeal_text=appeal_msg_text,
+                                        report_room_type="main")
 
 
 async def setup(bot):

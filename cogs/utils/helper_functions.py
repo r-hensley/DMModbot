@@ -30,7 +30,7 @@ JP_SERV_ID = 189571157446492161
 
 FORUM_META_THREAD_NAME = "Meta Discussion"
 FORUM_DEFAULT_TAGS = {
-    'Complete': '✅',
+    'Completed': '✅',
     'Open': '❗',
     'Closed (Unresolved)': '⏹️',
     'Ban Appeal': '🚷',
