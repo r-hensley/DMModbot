@@ -1015,7 +1015,7 @@ def is_submod(ctx):
     # special hardcode for role 591745589054668817 on spanish server - can use _send
     if ctx.guild.id == SP_SERV_ID:
         sp_serv_send_role = ctx.guild.get_role(591745589054668817)
-        if sp_serv_send_role in ctx.author.roles:
+        if sp_serv_send_role and sp_serv_send_role in ctx.author.roles:
             return True
 
     submod_roles = []
