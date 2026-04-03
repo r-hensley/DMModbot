@@ -12,8 +12,14 @@ class Submod(commands.Cog):
         self.bot = bot
 
     async def cog_check(self, ctx):
-        r = hf.is_submod(ctx)
-        return r
+        if hf.is_submod(ctx):
+            return True
+        # allow role 591745589054668817 in Spanish server to use _send only
+        if ctx.command.name == 'send' and ctx.guild and ctx.guild.id == hf.SP_SERV_ID:
+            sp_send_role = ctx.guild.get_role(591745589054668817)
+            if sp_send_role and sp_send_role in ctx.author.roles:
+                return True
+        return False
 
     @commands.command()
     async def set_submod_role(self, ctx, role: discord.Role):
