@@ -281,6 +281,16 @@ class Admin(commands.Cog):
         await interaction.response.send_message("I've created the message", ephemeral=True)
 
     @app_commands.command()
+    async def report(self, interaction: discord.Interaction):
+        """Start a report with the mods of this server"""
+        if not interaction.guild or interaction.guild.id not in self.bot.db.get('guilds', {}):
+            await interaction.response.send_message(
+                "This server has not set up a report room yet. Please ask the server admins to run `_setup`.",
+                ephemeral=True)
+            return
+        await self.report_button_callback(interaction)
+
+    @app_commands.command()
     @app_commands.default_permissions()
     @app_commands.describe(member="A member in this server to block")
     @app_commands.describe(member_id="The member ID of any user, even not in this server")
