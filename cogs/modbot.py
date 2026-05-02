@@ -702,11 +702,11 @@ class Modbot(commands.Cog):
                 raise hf.EndEarly
 
             if isinstance(open_report.dest, discord.DMChannel):
-                cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}"
+
                 if thread_info.setdefault('not_anonymous', False):
-                    cont += f" ({msg.author.mention}):** "
+                    cont = f" {msg.author.mention}: "
                 else:
-                    cont += ":** "
+                    cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}**: "
             else:
                 cont = f">>> {msg.author.mention}: "
 
