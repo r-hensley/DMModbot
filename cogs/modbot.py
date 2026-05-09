@@ -55,8 +55,18 @@ async def _send_typing_notif(self, channel, user):
             await self.bot.error_channel.send(f"Thread ID {thread_info['thread_id']} does not exist")
             del reports[user.id]  # clear reports since the thread id is invalid
             return
-        await report_thread.typing()
+        await _safe_typing(report_thread)
         return
+
+
+async def _safe_typing(channel):
+    """Send a typing indicator without allowing typing endpoint failures to interrupt flow."""
+    if channel is None:
+        return
+    try:
+        await channel.typing()
+    except discord.HTTPException:
+        pass
 
 
 @dataclass
@@ -505,9 +515,9 @@ class Modbot(commands.Cog):
             if not author.dm_channel:
                 await author.create_dm()
             if isinstance(report_channel, discord.TextChannel):
-                await report_channel.typing()
+                await _safe_typing(report_channel)
 
-            await author.dm_channel.typing()
+            await _safe_typing(author.dm_channel)
             await asyncio.sleep(1)
 
             try:
@@ -576,9 +586,9 @@ class Modbot(commands.Cog):
             if not author.dm_channel:
                 await author.create_dm()
             if isinstance(report_channel, discord.TextChannel):
-                await report_channel.typing()
+                await _safe_typing(report_channel)
 
-            await author.dm_channel.typing()
+            await _safe_typing(author.dm_channel)
             await asyncio.sleep(1)
 
             try:
