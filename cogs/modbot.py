@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from .utils import helper_functions as hf
 # from cogs.utils.BotUtils import bot_utils as utils
 
 dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+logger = logging.getLogger(__name__)
 
 # database structure
 # {
@@ -67,6 +69,7 @@ async def _safe_typing(channel):
         await channel.typing()
     except discord.HTTPException as err:
         if err.status == 429:
+            logger.debug("Typing indicator request was rate limited for channel %s", getattr(channel, "id", None))
             return
         raise
 
