@@ -65,8 +65,10 @@ async def _safe_typing(channel):
         return
     try:
         await channel.typing()
-    except discord.HTTPException:
-        pass
+    except discord.HTTPException as err:
+        if err.status == 429:
+            return
+        raise
 
 
 @dataclass
