@@ -338,7 +338,6 @@ class Admin(commands.Cog):
             return
 
         guild_config = self.bot.db['guilds'].setdefault(interaction.guild.id, {})
-        guild_config.setdefault('mod_role', None)
         permanent_non_anon_mods: list[int] = guild_config.setdefault('permanent_non_anonymous_mods', [])
         
         if enabled:
