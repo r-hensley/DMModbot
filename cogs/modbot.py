@@ -726,7 +726,8 @@ class Modbot(commands.Cog):
                     if msg.author.id not in notified_mods:
                         notified_mods.append(msg.author.id)
                         await msg.reply("Reminder: you have permanent non-anonymous mode enabled in this server, "
-                                        "so your identity is shown in this and all other report threads.")
+                                        "so your identity is shown in this and all other report threads.\n"
+                                        "-# To toggle this setting, use `/permanent_non_anonymous`.")
 
                 if thread_info.setdefault('not_anonymous', False) or is_permanently_non_anonymous:
                     cont = f" {msg.author.mention}: "
