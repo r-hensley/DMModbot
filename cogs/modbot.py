@@ -717,7 +717,7 @@ class Modbot(commands.Cog):
                 raise hf.EndEarly
 
             if isinstance(open_report.dest, discord.DMChannel):
-                guild_config = self.bot.db['guilds'].get(open_report.thread.guild.id, {})
+                guild_config = self.bot.db['guilds'].get(thread_info['guild_id'], {})
                 permanent_non_anonymous_mods: list[int] = guild_config.get('permanent_non_anonymous_mods', [])
                 is_permanently_non_anonymous = msg.author.id in permanent_non_anonymous_mods
 
