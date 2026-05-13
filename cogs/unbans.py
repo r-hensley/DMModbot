@@ -471,17 +471,21 @@ class Unbans(commands.Cog):
             cancellation_button.callback = cancellation_callback
             await interaction.response.edit_message(content=text["regular_start_text"], view=view)
 
-        answers = {}
         questions = [
-            ("password_changed", text["question_1"]),
-            ("enabled_2fa", text["question_2"]),
-            ("removed_apps", text["question_3"]),
+            ("password_changed", text["question_1"], None),
+            ("enabled_2fa", text["question_2"], "mfa"),
+            ("removed_apps", text["question_3"], "apps"),
         ]
+
+        def add_help_links(view: utils.RaiView, include_mfa: bool = False, include_apps: bool = False):
+            if include_mfa:
+                view.add_item(discord.ui.Button(label=text["mfa_help"], style=discord.ButtonStyle.link, url=mfa_url))
+            if include_apps:
+                view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
 
         def resource_view(include_cancel: bool = False):
             view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
-            view.add_item(discord.ui.Button(label=text["mfa_help"], style=discord.ButtonStyle.link, url=mfa_url))
-            view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
+            add_help_links(view, include_mfa=True, include_apps=True)
             if include_cancel:
                 cancel_btn = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
                 view.add_item(cancel_btn)
@@ -492,11 +496,11 @@ class Unbans(commands.Cog):
                 cancel_btn.callback = cancel_callback
             return view
 
-        async def show_security_question(interaction: discord.Interaction, question_index: int):
+        async def show_security_question(interaction: discord.Interaction, question_index: int, answers: dict):
             if question_index >= len(questions):
                 if all(answers.values()):
                     checklist_lines = [text["checklist_header"]]
-                    for answer_key, question_label in questions:
+                    for answer_key, question_label, _ in questions:
                         answer_text = text["yes"] if answers.get(answer_key) else text["no"]
                         checklist_lines.append(f"- {question_label}: {answer_text}")
                     appeal_text = "\n".join(checklist_lines)
@@ -509,35 +513,21 @@ class Unbans(commands.Cog):
                     )
                 return
 
-            answer_key, question = questions[question_index]
+            answer_key, question, question_help = questions[question_index]
             yes_btn = discord.ui.Button(label=text["yes"], style=discord.ButtonStyle.success)
             no_btn = discord.ui.Button(label=text["no"], style=discord.ButtonStyle.danger)
             question_view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             question_view.add_item(yes_btn)
             question_view.add_item(no_btn)
-            if question_index == 0:
-                question_view.add_item(
-                    discord.ui.Button(
-                        label=text["mfa_help"],
-                        style=discord.ButtonStyle.link,
-                        url=mfa_url
-                    )
-                )
-                question_view.add_item(
-                    discord.ui.Button(
-                        label=text["apps_help"],
-                        style=discord.ButtonStyle.link,
-                        url=DEAUTHORIZE_APPS_URL
-                    )
-                )
+            add_help_links(question_view, include_mfa=question_help == "mfa", include_apps=question_help == "apps")
 
             async def yes_callback(q_interaction: discord.Interaction):
                 answers[answer_key] = True
-                await show_security_question(q_interaction, question_index + 1)
+                await show_security_question(q_interaction, question_index + 1, answers)
 
             async def no_callback(q_interaction: discord.Interaction):
                 answers[answer_key] = False
-                await show_security_question(q_interaction, question_index + 1)
+                await show_security_question(q_interaction, question_index + 1, answers)
 
             yes_btn.callback = yes_callback
             no_btn.callback = no_callback
@@ -555,8 +545,8 @@ class Unbans(commands.Cog):
         hacked_view.add_item(hacked_cancel_button)
 
         async def hacked_yes_callback(hacked_interaction: discord.Interaction):
-            answers.clear()
-            await show_security_question(hacked_interaction, 0)
+            answers = {}
+            await show_security_question(hacked_interaction, 0, answers)
 
         async def hacked_no_callback(hacked_interaction: discord.Interaction):
             await show_normal_appeal_start(hacked_interaction)
