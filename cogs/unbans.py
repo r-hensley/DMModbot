@@ -83,6 +83,7 @@ class Unbans(commands.Cog):
 
     @staticmethod
     def normalize_locale(locale: str) -> str:
+        """Normalize locale strings while keeping all Chinese variants grouped under a single zh key."""
         if locale.startswith("zh"):
             return "zh"
         return locale.split('-')[0]
@@ -322,6 +323,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"Thanks. I will start your appeal now. Please read the private message from {self.bot.user.mention}{dm_channel_link}",
                 "hacked_yes": "Yes, my account was hacked",
                 "hacked_no": "No, it was not hacked",
+                "checklist_header": "Hacked-account checklist answers:",
                 "mfa_help": "2FA help",
                 "apps_help": "Remove approved apps",
             },
@@ -343,6 +345,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"Gracias. Ahora iniciaré tu apelación. Por favor, revisa el mensaje privado de {self.bot.user.mention}{dm_channel_link}.",
                 "hacked_yes": "Sí, mi cuenta fue hackeada",
                 "hacked_no": "No, no fue hackeada",
+                "checklist_header": "Respuestas de la lista de seguridad por cuenta hackeada:",
                 "mfa_help": "Ayuda para 2FA",
                 "apps_help": "Eliminar apps autorizadas",
             },
@@ -364,6 +367,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"ありがとうございます。今から申請を開始します。{self.bot.user.mention}からのDMをご確認ください{dm_channel_link}。",
                 "hacked_yes": "はい、乗っ取られました",
                 "hacked_no": "いいえ、乗っ取られていません",
+                "checklist_header": "乗っ取りアカウント確認の回答:",
                 "mfa_help": "2FAヘルプ",
                 "apps_help": "承認済みアプリを削除",
             },
@@ -385,6 +389,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"Merci. Je vais démarrer votre appel maintenant. Veuillez lire le message privé de {self.bot.user.mention}{dm_channel_link}.",
                 "hacked_yes": "Oui, mon compte a été piraté",
                 "hacked_no": "Non, il n’a pas été piraté",
+                "checklist_header": "Réponses de la checklist de compte piraté :",
                 "mfa_help": "Aide 2FA",
                 "apps_help": "Supprimer les apps autorisées",
             },
@@ -406,6 +411,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"شكرًا لك. سأبدأ استئنافك الآن. يرجى قراءة الرسالة الخاصة من {self.bot.user.mention}{dm_channel_link}.",
                 "hacked_yes": "نعم، تم اختراق حسابي",
                 "hacked_no": "لا، لم يتم اختراقه",
+                "checklist_header": "إجابات قائمة التحقق لحالة اختراق الحساب:",
                 "mfa_help": "مساعدة 2FA",
                 "apps_help": "إزالة التطبيقات المصرح بها",
             },
@@ -427,6 +433,7 @@ class Unbans(commands.Cog):
                 "security_complete_starting": f"谢谢。我现在将开始你的申诉。请阅读来自 {self.bot.user.mention} 的私信{dm_channel_link}。",
                 "hacked_yes": "是，我的账号被盗了",
                 "hacked_no": "否，没有被盗",
+                "checklist_header": "账号被盗安全检查答案：",
                 "mfa_help": "2FA 帮助",
                 "apps_help": "移除已授权应用",
             },
@@ -488,10 +495,10 @@ class Unbans(commands.Cog):
             if question_index >= len(questions):
                 if all(answers.values()):
                     appeal_text = (
-                        "Hacked-account checklist answers:\n"
-                        f"- Recovered account + changed password: {'Yes' if answers['password_changed'] else 'No'}\n"
-                        f"- Enabled two-factor authentication: {'Yes' if answers['enabled_2fa'] else 'No'}\n"
-                        f"- Removed all approved apps: {'Yes' if answers['removed_apps'] else 'No'}"
+                        f"{text['checklist_header']}\n"
+                        f"- {text['question_1']}: {text['yes'] if answers['password_changed'] else text['no']}\n"
+                        f"- {text['question_2']}: {text['yes'] if answers['enabled_2fa'] else text['no']}\n"
+                        f"- {text['question_3']}: {text['yes'] if answers['removed_apps'] else text['no']}"
                     )
                     await interaction.response.edit_message(content=text["security_complete_starting"], view=None)
                     await self.start_ban_appeal(button_interaction.user, guild, appeal_text)
