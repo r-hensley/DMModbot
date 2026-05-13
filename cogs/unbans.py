@@ -464,7 +464,10 @@ class Unbans(commands.Cog):
             view.add_item(cancellation_button)
 
             async def on_timeout():
-                await interaction.edit_original_response(view=None)
+                try:
+                    await interaction.edit_original_response(view=None)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
 
             view.on_timeout = on_timeout
 
@@ -494,7 +497,10 @@ class Unbans(commands.Cog):
             view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             add_help_links(view, include_mfa=True, include_apps=True)
             async def on_timeout():
-                await timeout_interaction.edit_original_response(view=None)
+                try:
+                    await timeout_interaction.edit_original_response(view=None)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
             view.on_timeout = on_timeout
             if include_cancel:
                 cancel_btn = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
@@ -531,7 +537,10 @@ class Unbans(commands.Cog):
             question_view.add_item(no_btn)
             add_help_links(question_view, include_mfa=question_help == "mfa", include_apps=question_help == "apps")
             async def on_timeout():
-                await interaction.edit_original_response(view=None)
+                try:
+                    await interaction.edit_original_response(view=None)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
             question_view.on_timeout = on_timeout
 
             async def yes_callback(q_interaction: discord.Interaction):
@@ -557,7 +566,10 @@ class Unbans(commands.Cog):
         hacked_view.add_item(hacked_no_button)
         hacked_view.add_item(hacked_cancel_button)
         async def on_timeout():
-            await button_interaction.edit_original_response(view=None)
+            try:
+                await button_interaction.edit_original_response(view=None)
+            except (discord.NotFound, discord.HTTPException):
+                pass
         hacked_view.on_timeout = on_timeout
         questionnaire_started = False
 
