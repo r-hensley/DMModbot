@@ -337,7 +337,8 @@ class Admin(commands.Cog):
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
 
-        guild_config = self.bot.db['guilds'].setdefault(interaction.guild.id, {'mod_role': None})
+        guild_config = self.bot.db['guilds'].setdefault(interaction.guild.id, {})
+        guild_config.setdefault('mod_role', None)
         permanent_non_anon_mods: list[int] = guild_config.setdefault('permanent_non_anonymous_mods', [])
         
         if enabled:
