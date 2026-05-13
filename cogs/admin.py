@@ -26,7 +26,7 @@ INSTRUCTIONS = ["・`end` or `close` - Finish the current report.",
                 "want a user to come to the report room or send an official mod message to a channel.",
                 "・`_not_anon` - Type this during a report session to reveal moderator names for future "
                 "messages. You can enter it again to return to anonymity at any time during the session, "
-                "and it'll be automatically  reset to default anonymity after the session ends.",
+                "and it'll be automatically reset to default anonymity after the session ends.",
                 "・`/block` - Block or unblock a user from entering the report room / making a ban appeal.",
                 "・`/permanent_non_anonymous` - Enable or disable permanent non-anonymous mode for yourself in this server."]
 INSTRUCTIONS = '\n'.join(INSTRUCTIONS)
@@ -336,12 +336,7 @@ class Admin(commands.Cog):
         if not interaction.guild:
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
-        
-        if not interaction.permissions.administrator:
-            await interaction.response.send_message("You must be a server administrator to use this command.",
-                                                    ephemeral=True)
-            return
-        
+
         guild_config = self.bot.db['guilds'].setdefault(interaction.guild.id, {'mod_role': None})
         permanent_non_anon_mods: list[int] = guild_config.setdefault('permanent_non_anonymous_mods', [])
         
