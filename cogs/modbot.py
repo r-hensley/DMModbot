@@ -720,7 +720,7 @@ class Modbot(commands.Cog):
                 guild_config = self.bot.db['guilds'].get(open_report.thread.guild.id, {})
                 permanent_non_anonymous_mods: list[int] = guild_config.get('permanent_non_anonymous_mods', [])
                 is_permanently_non_anonymous = msg.author.id in permanent_non_anonymous_mods
-                
+
                 if is_permanently_non_anonymous:
                     notified_mods: list[int] = thread_info.setdefault('permanent_non_anonymous_notified_mods', [])
                     if msg.author.id not in notified_mods:
