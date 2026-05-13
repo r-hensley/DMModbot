@@ -10,6 +10,9 @@ from cogs.utils.BotUtils import bot_utils as utils
 
 RYRY_ID = 202995638860906496
 TEST_SERVER_ID = 275146036178059265
+MFA_URL_EN = "https://support.discord.com/hc/en-us/articles/219576828-Setting-up-Multi-Factor-Authentication"
+MFA_URL_ES = "https://support.discord.com/hc/es/articles/219576828-Configurando-la-Autenticación-de-múltiples-factores"
+DEAUTHORIZE_APPS_URL = "https://www.iorad.com/player/2100432/Discord---How-to-deauthorize-an-app-"
 
 
 async def reinitialize_buttons(unbans):
@@ -77,6 +80,12 @@ class Unbans(commands.Cog):
     def __init__(self, bot):
         self.bot: commands.Bot = bot
         self.ban_appeal_server_id = int(os.getenv("BAN_APPEALS_GUILD_ID") or 0)
+
+    @staticmethod
+    def normalize_locale(locale: str) -> str:
+        if locale.startswith("zh"):
+            return "zh"
+        return locale.split('-')[0]
     
     async def cog_load(self):
         utils.asyncio_task(reinitialize_buttons, self)
@@ -284,55 +293,272 @@ class Unbans(commands.Cog):
         except discord.HTTPException:
             # HTTPException: 400 Bad Request (error code: 50006): Cannot send an empty message
             pass  # DM works
-        
+
         # Start ban appeal process
         self.bot.db['user_localizations'][button_interaction.user.id] = str(locale)
-        if str(locale).startswith('es'):
-            response_text = f"Esto iniciará una apelación de baneo con {guild.name}. " \
-                            f"¿Está seguro de que desea continuar?"
-            confirmation_text = "Iniciar un apelación de expulsión"
-            cancelation_text = "Cancelar"
-            cancelation_confirmation = "Cancelado"
-            final_text = f"Por favor, lea el mensaje privado de {self.bot.user.mention}{dm_channel_link}."
-        elif str(locale).startswith("ja"):
-            response_text = f"これにより{guild.name}でバンの解除申請が開始されます。よろしいですか。"
-            confirmation_text = "バンの解除申請を開始します"
-            cancelation_text = "キャンセル"
-            cancelation_confirmation = "中止しました。"
-            final_text = f"{self.bot.user.mention}からのメッセージをご確認ください{dm_channel_link}。"
-        else:
-            response_text = f"This will start a ban appeal with {guild.name}. Are you sure you wish to continue?"
-            confirmation_text = "Start a ban appeal"
-            cancelation_text = "Cancel"
-            cancelation_confirmation = "Canceled"
-            final_text = f"Please read the private message from {self.bot.user.mention}{dm_channel_link}"
-        
-        confirmation_button = discord.ui.Button(label=confirmation_text)
-        cancellation_button = discord.ui.Button(label=cancelation_text)
-        view = utils.RaiView()
-        view.add_item(confirmation_button)
-        view.add_item(cancellation_button)
-        
-        async def on_timeout():
-            await button_interaction.edit_original_response(view=None)
-        
-        view.on_timeout = on_timeout
+        locale_key = self.normalize_locale(str(locale))
+        locales = {
+            "en": {
+                "regular_start_text": f"This will start a ban appeal with {guild.name}. Are you sure you wish to continue?",
+                "regular_start_button": "Start a ban appeal",
+                "yes": "Yes",
+                "no": "No",
+                "cancel": "Cancel",
+                "canceled": "Canceled",
+                "final_text": f"Please read the private message from {self.bot.user.mention}{dm_channel_link}",
+                "hacked_prompt": "Was your Discord account hacked?",
+                "hacked_prompt_details": "Choose one option below to continue.",
+                "security_intro": "If your account was hacked, please complete these steps before appealing your ban:\n1. Change your password.\n2. Enable two-factor authentication.\n3. Remove all approved apps from your account.",
+                "question_1": "Have you recovered your account and changed your password?",
+                "question_2": "Have you enabled two-factor authentication?",
+                "question_3": "Have you removed all approved apps from your account?",
+                "security_not_ready": "Please complete all 3 safety steps first, then start the appeal again.",
+                "security_complete_starting": f"Thanks. I will start your appeal now. Please read the private message from {self.bot.user.mention}{dm_channel_link}",
+                "hacked_yes": "Yes, my account was hacked",
+                "hacked_no": "No, it was not hacked",
+                "mfa_help": "2FA help",
+                "apps_help": "Remove approved apps",
+            },
+            "es": {
+                "regular_start_text": f"Esto iniciará una apelación de baneo con {guild.name}. ¿Está seguro de que desea continuar?",
+                "regular_start_button": "Iniciar una apelación de expulsión",
+                "yes": "Sí",
+                "no": "No",
+                "cancel": "Cancelar",
+                "canceled": "Cancelado",
+                "final_text": f"Por favor, lea el mensaje privado de {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_prompt": "¿Tu cuenta de Discord fue hackeada?",
+                "hacked_prompt_details": "Elige una opción para continuar.",
+                "security_intro": "Si tu cuenta fue hackeada, completa estos pasos antes de apelar tu baneo:\n1. Cambia tu contraseña.\n2. Activa la autenticación de dos factores.\n3. Elimina todas las aplicaciones autorizadas de tu cuenta.",
+                "question_1": "¿Ya recuperaste tu cuenta y cambiaste tu contraseña?",
+                "question_2": "¿Ya activaste la autenticación de dos factores?",
+                "question_3": "¿Ya eliminaste todas las aplicaciones autorizadas de tu cuenta?",
+                "security_not_ready": "Completa primero los 3 pasos de seguridad y luego vuelve a iniciar la apelación.",
+                "security_complete_starting": f"Gracias. Ahora iniciaré tu apelación. Por favor, revisa el mensaje privado de {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_yes": "Sí, mi cuenta fue hackeada",
+                "hacked_no": "No, no fue hackeada",
+                "mfa_help": "Ayuda para 2FA",
+                "apps_help": "Eliminar apps autorizadas",
+            },
+            "ja": {
+                "regular_start_text": f"これにより{guild.name}でバンの解除申請が開始されます。よろしいですか。",
+                "regular_start_button": "バンの解除申請を開始",
+                "yes": "はい",
+                "no": "いいえ",
+                "cancel": "キャンセル",
+                "canceled": "中止しました。",
+                "final_text": f"{self.bot.user.mention}からのメッセージをご確認ください{dm_channel_link}。",
+                "hacked_prompt": "Discordアカウントは乗っ取られましたか？",
+                "hacked_prompt_details": "続行するには下のボタンを選択してください。",
+                "security_intro": "アカウントが乗っ取られた場合、バン解除申請の前に次を行ってください:\n1. パスワードを変更する。\n2. 二要素認証を有効にする。\n3. 承認済みアプリをすべて削除する。",
+                "question_1": "アカウントを復旧し、パスワードを変更しましたか？",
+                "question_2": "二要素認証を有効にしましたか？",
+                "question_3": "承認済みアプリをすべて削除しましたか？",
+                "security_not_ready": "先に3つの安全手順をすべて完了してから、もう一度申請を開始してください。",
+                "security_complete_starting": f"ありがとうございます。今から申請を開始します。{self.bot.user.mention}からのDMをご確認ください{dm_channel_link}。",
+                "hacked_yes": "はい、乗っ取られました",
+                "hacked_no": "いいえ、乗っ取られていません",
+                "mfa_help": "2FAヘルプ",
+                "apps_help": "承認済みアプリを削除",
+            },
+            "fr": {
+                "regular_start_text": f"Cela va démarrer un appel de bannissement avec {guild.name}. Voulez-vous continuer ?",
+                "regular_start_button": "Démarrer un appel de bannissement",
+                "yes": "Oui",
+                "no": "Non",
+                "cancel": "Annuler",
+                "canceled": "Annulé",
+                "final_text": f"Veuillez lire le message privé de {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_prompt": "Votre compte Discord a-t-il été piraté ?",
+                "hacked_prompt_details": "Choisissez une option ci-dessous pour continuer.",
+                "security_intro": "Si votre compte a été piraté, veuillez faire ces étapes avant de faire appel:\n1. Changez votre mot de passe.\n2. Activez l’authentification à deux facteurs.\n3. Supprimez toutes les applications autorisées de votre compte.",
+                "question_1": "Avez-vous récupéré votre compte et changé votre mot de passe ?",
+                "question_2": "Avez-vous activé l’authentification à deux facteurs ?",
+                "question_3": "Avez-vous supprimé toutes les applications autorisées de votre compte ?",
+                "security_not_ready": "Veuillez d’abord terminer les 3 étapes de sécurité, puis recommencer l’appel.",
+                "security_complete_starting": f"Merci. Je vais démarrer votre appel maintenant. Veuillez lire le message privé de {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_yes": "Oui, mon compte a été piraté",
+                "hacked_no": "Non, il n’a pas été piraté",
+                "mfa_help": "Aide 2FA",
+                "apps_help": "Supprimer les apps autorisées",
+            },
+            "ar": {
+                "regular_start_text": f"سيؤدي هذا إلى بدء استئناف الحظر مع {guild.name}. هل تريد المتابعة؟",
+                "regular_start_button": "بدء استئناف الحظر",
+                "yes": "نعم",
+                "no": "لا",
+                "cancel": "إلغاء",
+                "canceled": "تم الإلغاء",
+                "final_text": f"يرجى قراءة الرسالة الخاصة من {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_prompt": "هل تم اختراق حسابك في Discord؟",
+                "hacked_prompt_details": "اختر أحد الخيارات أدناه للمتابعة.",
+                "security_intro": "إذا تم اختراق حسابك، يرجى إكمال الخطوات التالية قبل الاستئناف:\n1. غيّر كلمة المرور.\n2. فعّل المصادقة الثنائية.\n3. أزل كل التطبيقات المصرح بها من حسابك.",
+                "question_1": "هل استعدت حسابك وغيّرت كلمة المرور؟",
+                "question_2": "هل فعّلت المصادقة الثنائية؟",
+                "question_3": "هل أزلت كل التطبيقات المصرح بها من حسابك؟",
+                "security_not_ready": "يرجى إكمال خطوات الأمان الثلاث أولًا ثم ابدأ الاستئناف مرة أخرى.",
+                "security_complete_starting": f"شكرًا لك. سأبدأ استئنافك الآن. يرجى قراءة الرسالة الخاصة من {self.bot.user.mention}{dm_channel_link}.",
+                "hacked_yes": "نعم، تم اختراق حسابي",
+                "hacked_no": "لا، لم يتم اختراقه",
+                "mfa_help": "مساعدة 2FA",
+                "apps_help": "إزالة التطبيقات المصرح بها",
+            },
+            "zh": {
+                "regular_start_text": f"这将向 {guild.name} 发起封禁申诉。你确定要继续吗？",
+                "regular_start_button": "开始封禁申诉",
+                "yes": "是",
+                "no": "否",
+                "cancel": "取消",
+                "canceled": "已取消",
+                "final_text": f"请阅读来自 {self.bot.user.mention} 的私信{dm_channel_link}。",
+                "hacked_prompt": "你的 Discord 账号被盗了吗？",
+                "hacked_prompt_details": "请选择一个选项继续。",
+                "security_intro": "如果你的账号被盗，请在申诉前先完成以下步骤：\n1. 修改密码。\n2. 启用双重验证。\n3. 移除账号中所有已授权应用。",
+                "question_1": "你是否已经找回账号并修改密码？",
+                "question_2": "你是否已经启用双重验证？",
+                "question_3": "你是否已经移除所有已授权应用？",
+                "security_not_ready": "请先完成这 3 个安全步骤，然后再重新开始申诉。",
+                "security_complete_starting": f"谢谢。我现在将开始你的申诉。请阅读来自 {self.bot.user.mention} 的私信{dm_channel_link}。",
+                "hacked_yes": "是，我的账号被盗了",
+                "hacked_no": "否，没有被盗",
+                "mfa_help": "2FA 帮助",
+                "apps_help": "移除已授权应用",
+            },
+        }
+        text = locales.get(locale_key, locales["en"])
 
         async def on_ban_appeal_submit(interaction: discord.Interaction, appeal_text: str):
-            await interaction.response.send_message(final_text, ephemeral=True)
+            await interaction.response.send_message(text["final_text"], ephemeral=True)
             await self.start_ban_appeal(button_interaction.user, guild, appeal_text)
-        
-        async def confirmation_callback(confirmation_interaction: discord.Interaction):
-            await button_interaction.edit_original_response(view=None)
+
+        async def open_regular_appeal_modal(confirmation_interaction: discord.Interaction):
             await confirmation_interaction.response.send_modal(BanAppealForm(on_ban_appeal_submit, str(locale)))
-        
-        async def cancellation_callback(cancellation_confirmation: discord.Interaction):
-            await button_interaction.edit_original_response(view=None)
-            await cancellation_confirmation.response.send_message(cancelation_confirmation, ephemeral=True)
-        
-        confirmation_button.callback = confirmation_callback
-        cancellation_button.callback = cancellation_callback
-        await button_interaction.response.send_message(response_text, view=view, ephemeral=True)
+
+        async def show_normal_appeal_start(interaction: discord.Interaction):
+            confirmation_button = discord.ui.Button(label=text["regular_start_button"], style=discord.ButtonStyle.primary)
+            cancellation_button = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
+            view = utils.RaiView(timeout=300)
+            view.add_item(confirmation_button)
+            view.add_item(cancellation_button)
+
+            async def on_timeout():
+                await button_interaction.edit_original_response(view=None)
+
+            view.on_timeout = on_timeout
+
+            async def confirmation_callback(confirmation_interaction: discord.Interaction):
+                await open_regular_appeal_modal(confirmation_interaction)
+
+            async def cancellation_callback(cancellation_interaction: discord.Interaction):
+                await cancellation_interaction.response.edit_message(content=text["canceled"], view=None)
+
+            confirmation_button.callback = confirmation_callback
+            cancellation_button.callback = cancellation_callback
+            await interaction.response.edit_message(content=text["regular_start_text"], view=view)
+
+        answers = {}
+        questions = [
+            ("password_changed", text["question_1"]),
+            ("enabled_2fa", text["question_2"]),
+            ("removed_apps", text["question_3"]),
+        ]
+
+        def resource_view(include_cancel: bool = False):
+            view = utils.RaiView(timeout=300)
+            mfa_url = MFA_URL_ES if locale_key == "es" else MFA_URL_EN
+            view.add_item(discord.ui.Button(label=text["mfa_help"], style=discord.ButtonStyle.link, url=mfa_url))
+            view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
+            if include_cancel:
+                cancel_btn = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
+                view.add_item(cancel_btn)
+
+                async def cancel_callback(cancel_interaction: discord.Interaction):
+                    await cancel_interaction.response.edit_message(content=text["canceled"], view=None)
+
+                cancel_btn.callback = cancel_callback
+            return view
+
+        async def show_security_question(interaction: discord.Interaction, question_index: int):
+            if question_index >= len(questions):
+                if all(answers.values()):
+                    appeal_text = (
+                        "Hacked-account checklist answers:\n"
+                        f"- Recovered account + changed password: {'Yes' if answers['password_changed'] else 'No'}\n"
+                        f"- Enabled two-factor authentication: {'Yes' if answers['enabled_2fa'] else 'No'}\n"
+                        f"- Removed all approved apps: {'Yes' if answers['removed_apps'] else 'No'}"
+                    )
+                    await interaction.response.edit_message(content=text["security_complete_starting"], view=None)
+                    await self.start_ban_appeal(button_interaction.user, guild, appeal_text)
+                else:
+                    await interaction.response.edit_message(
+                        content=f"{text['security_not_ready']}\n\n{text['security_intro']}",
+                        view=resource_view(include_cancel=True)
+                    )
+                return
+
+            answer_key, question = questions[question_index]
+            yes_btn = discord.ui.Button(label=text["yes"], style=discord.ButtonStyle.success)
+            no_btn = discord.ui.Button(label=text["no"], style=discord.ButtonStyle.danger)
+            question_view = utils.RaiView(timeout=300)
+            question_view.add_item(yes_btn)
+            question_view.add_item(no_btn)
+            if question_index == 0:
+                question_view.add_item(
+                    discord.ui.Button(
+                        label=text["mfa_help"],
+                        style=discord.ButtonStyle.link,
+                        url=MFA_URL_ES if locale_key == "es" else MFA_URL_EN
+                    )
+                )
+                question_view.add_item(
+                    discord.ui.Button(
+                        label=text["apps_help"],
+                        style=discord.ButtonStyle.link,
+                        url=DEAUTHORIZE_APPS_URL
+                    )
+                )
+
+            async def yes_callback(q_interaction: discord.Interaction):
+                answers[answer_key] = True
+                await show_security_question(q_interaction, question_index + 1)
+
+            async def no_callback(q_interaction: discord.Interaction):
+                answers[answer_key] = False
+                await show_security_question(q_interaction, question_index + 1)
+
+            yes_btn.callback = yes_callback
+            no_btn.callback = no_callback
+            await interaction.response.edit_message(
+                content=f"{text['security_intro']}\n\n{question}",
+                view=question_view
+            )
+
+        hacked_yes_button = discord.ui.Button(label=text["hacked_yes"], style=discord.ButtonStyle.danger)
+        hacked_no_button = discord.ui.Button(label=text["hacked_no"], style=discord.ButtonStyle.success)
+        hacked_cancel_button = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
+        hacked_view = utils.RaiView(timeout=300)
+        hacked_view.add_item(hacked_yes_button)
+        hacked_view.add_item(hacked_no_button)
+        hacked_view.add_item(hacked_cancel_button)
+
+        async def hacked_yes_callback(hacked_interaction: discord.Interaction):
+            answers.clear()
+            await show_security_question(hacked_interaction, 0)
+
+        async def hacked_no_callback(hacked_interaction: discord.Interaction):
+            await show_normal_appeal_start(hacked_interaction)
+
+        async def hacked_cancel_callback(hacked_interaction: discord.Interaction):
+            await hacked_interaction.response.edit_message(content=text["canceled"], view=None)
+
+        hacked_yes_button.callback = hacked_yes_callback
+        hacked_no_button.callback = hacked_no_callback
+        hacked_cancel_button.callback = hacked_cancel_callback
+        await button_interaction.response.send_message(
+            f"{text['hacked_prompt']}\n{text['hacked_prompt_details']}",
+            view=hacked_view,
+            ephemeral=True
+        )
     
     async def start_ban_appeal(self, user: discord.User, guild: discord.Guild, appeal_msg_text: str):
         # In case modal does not close properly but the appeal is made, prevent copies
