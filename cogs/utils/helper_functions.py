@@ -351,6 +351,7 @@ async def add_report_to_db(author: discord.User, report_thread: discord.Thread, 
         "report_room_type": report_room_type,
         "mods": [],
         "not_anonymous": False,
+        "permanent_non_anonymous_notified_mods": [],
     }
     await dump_json()
 

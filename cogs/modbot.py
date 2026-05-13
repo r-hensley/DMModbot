@@ -717,8 +717,19 @@ class Modbot(commands.Cog):
                 raise hf.EndEarly
 
             if isinstance(open_report.dest, discord.DMChannel):
-
-                if thread_info.setdefault('not_anonymous', False):
+                guild_config = self.bot.db['guilds'].get(open_report.thread.guild.id, {})
+                permanent_non_anonymous_mods: list[int] = guild_config.get('permanent_non_anonymous_mods', [])
+                is_permanently_non_anonymous = msg.author.id in permanent_non_anonymous_mods
+                
+                if is_permanently_non_anonymous:
+                    notified_mods: list[int] = thread_info.setdefault('permanent_non_anonymous_notified_mods', [])
+                    if msg.author.id not in notified_mods:
+                        notified_mods.append(msg.author.id)
+                        await msg.reply("Reminder: you have permanent non-anonymous mode enabled in this server, "
+                                        "so your identity is shown in every report thread.")
+                        await hf.dump_json()
+                
+                if thread_info.setdefault('not_anonymous', False) or is_permanently_non_anonymous:
                     cont = f" {msg.author.mention}: "
                 else:
                     cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}**: "
