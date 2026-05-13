@@ -93,11 +93,12 @@ class Unbans(commands.Cog):
 
     @staticmethod
     def get_mfa_url(locale: str) -> str:
-        if locale == "es":
+        locale_key = Unbans.normalize_locale(str(locale or "en"))
+        if locale_key == "es":
             return MFA_URL_ES
-        if locale == "fr":
+        if locale_key == "fr":
             return MFA_URL_FR
-        if locale == "ja":
+        if locale_key == "ja":
             return MFA_URL_JA
         return MFA_URL_EN
     
