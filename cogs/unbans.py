@@ -86,6 +86,12 @@ class Unbans(commands.Cog):
         if locale.startswith("zh"):
             return "zh"
         return locale.split('-')[0]
+
+    @staticmethod
+    def get_mfa_url(locale: str) -> str:
+        if locale == "es":
+            return MFA_URL_ES
+        return MFA_URL_EN
     
     async def cog_load(self):
         utils.asyncio_task(reinitialize_buttons, self)
@@ -426,6 +432,7 @@ class Unbans(commands.Cog):
             },
         }
         text = locales.get(locale_key, locales["en"])
+        mfa_url = self.get_mfa_url(locale_key)
 
         async def on_ban_appeal_submit(interaction: discord.Interaction, appeal_text: str):
             await interaction.response.send_message(text["final_text"], ephemeral=True)
@@ -465,7 +472,6 @@ class Unbans(commands.Cog):
 
         def resource_view(include_cancel: bool = False):
             view = utils.RaiView(timeout=300)
-            mfa_url = MFA_URL_ES if locale_key == "es" else MFA_URL_EN
             view.add_item(discord.ui.Button(label=text["mfa_help"], style=discord.ButtonStyle.link, url=mfa_url))
             view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
             if include_cancel:
@@ -507,7 +513,7 @@ class Unbans(commands.Cog):
                     discord.ui.Button(
                         label=text["mfa_help"],
                         style=discord.ButtonStyle.link,
-                        url=MFA_URL_ES if locale_key == "es" else MFA_URL_EN
+                        url=mfa_url
                     )
                 )
                 question_view.add_item(
