@@ -10,8 +10,10 @@ from cogs.utils.BotUtils import bot_utils as utils
 
 RYRY_ID = 202995638860906496
 TEST_SERVER_ID = 275146036178059265
-MFA_URL_EN = "https://support.discord.com/hc/en-us/articles/219576828-Setting-up-Multi-Factor-Authentication"
-MFA_URL_ES = "https://support.discord.com/hc/es/articles/219576828-Configurando-la-Autenticación-de-múltiples-factores"
+MFA_URL_EN = "https://support.discord.com/hc/en-us/articles/219576828"
+MFA_URL_ES = "https://support.discord.com/hc/es/articles/219576828"
+MFA_URL_FR = "https://support.discord.com/hc/fr/articles/219576828"
+MFA_URL_JA = "https://support.discord.com/hc/ja/articles/219576828"
 DEAUTHORIZE_APPS_URL = "https://www.iorad.com/player/2100432/Discord---How-to-deauthorize-an-app-"
 INTERACTION_TIMEOUT_SECONDS = 300
 
@@ -93,6 +95,10 @@ class Unbans(commands.Cog):
     def get_mfa_url(locale: str) -> str:
         if locale == "es":
             return MFA_URL_ES
+        if locale == "fr":
+            return MFA_URL_FR
+        if locale == "ja":
+            return MFA_URL_JA
         return MFA_URL_EN
     
     async def cog_load(self):
