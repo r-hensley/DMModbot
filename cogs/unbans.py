@@ -13,6 +13,7 @@ TEST_SERVER_ID = 275146036178059265
 MFA_URL_EN = "https://support.discord.com/hc/en-us/articles/219576828-Setting-up-Multi-Factor-Authentication"
 MFA_URL_ES = "https://support.discord.com/hc/es/articles/219576828-Configurando-la-Autenticación-de-múltiples-factores"
 DEAUTHORIZE_APPS_URL = "https://www.iorad.com/player/2100432/Discord---How-to-deauthorize-an-app-"
+INTERACTION_TIMEOUT_SECONDS = 300
 
 
 async def reinitialize_buttons(unbans):
@@ -451,7 +452,7 @@ class Unbans(commands.Cog):
         async def show_normal_appeal_start(interaction: discord.Interaction):
             confirmation_button = discord.ui.Button(label=text["regular_start_button"], style=discord.ButtonStyle.primary)
             cancellation_button = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
-            view = utils.RaiView(timeout=300)
+            view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             view.add_item(confirmation_button)
             view.add_item(cancellation_button)
 
@@ -478,7 +479,7 @@ class Unbans(commands.Cog):
         ]
 
         def resource_view(include_cancel: bool = False):
-            view = utils.RaiView(timeout=300)
+            view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             view.add_item(discord.ui.Button(label=text["mfa_help"], style=discord.ButtonStyle.link, url=mfa_url))
             view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
             if include_cancel:
@@ -494,12 +495,11 @@ class Unbans(commands.Cog):
         async def show_security_question(interaction: discord.Interaction, question_index: int):
             if question_index >= len(questions):
                 if all(answers.values()):
-                    appeal_text = (
-                        f"{text['checklist_header']}\n"
-                        f"- {text['question_1']}: {text['yes'] if answers['password_changed'] else text['no']}\n"
-                        f"- {text['question_2']}: {text['yes'] if answers['enabled_2fa'] else text['no']}\n"
-                        f"- {text['question_3']}: {text['yes'] if answers['removed_apps'] else text['no']}"
-                    )
+                    checklist_lines = [text["checklist_header"]]
+                    for answer_key, question_label in questions:
+                        answer_text = text["yes"] if answers.get(answer_key) else text["no"]
+                        checklist_lines.append(f"- {question_label}: {answer_text}")
+                    appeal_text = "\n".join(checklist_lines)
                     await interaction.response.edit_message(content=text["security_complete_starting"], view=None)
                     await self.start_ban_appeal(button_interaction.user, guild, appeal_text)
                 else:
@@ -512,7 +512,7 @@ class Unbans(commands.Cog):
             answer_key, question = questions[question_index]
             yes_btn = discord.ui.Button(label=text["yes"], style=discord.ButtonStyle.success)
             no_btn = discord.ui.Button(label=text["no"], style=discord.ButtonStyle.danger)
-            question_view = utils.RaiView(timeout=300)
+            question_view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             question_view.add_item(yes_btn)
             question_view.add_item(no_btn)
             if question_index == 0:
@@ -549,7 +549,7 @@ class Unbans(commands.Cog):
         hacked_yes_button = discord.ui.Button(label=text["hacked_yes"], style=discord.ButtonStyle.danger)
         hacked_no_button = discord.ui.Button(label=text["hacked_no"], style=discord.ButtonStyle.success)
         hacked_cancel_button = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
-        hacked_view = utils.RaiView(timeout=300)
+        hacked_view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
         hacked_view.add_item(hacked_yes_button)
         hacked_view.add_item(hacked_no_button)
         hacked_view.add_item(hacked_cancel_button)
