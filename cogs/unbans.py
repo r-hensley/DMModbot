@@ -457,7 +457,7 @@ class Unbans(commands.Cog):
             view.add_item(cancellation_button)
 
             async def on_timeout():
-                await button_interaction.edit_original_response(view=None)
+                await interaction.edit_original_response(view=None)
 
             view.on_timeout = on_timeout
 
@@ -543,8 +543,14 @@ class Unbans(commands.Cog):
         hacked_view.add_item(hacked_yes_button)
         hacked_view.add_item(hacked_no_button)
         hacked_view.add_item(hacked_cancel_button)
+        questionnaire_started = False
 
         async def hacked_yes_callback(hacked_interaction: discord.Interaction):
+            nonlocal questionnaire_started
+            if questionnaire_started:
+                await hacked_interaction.response.defer()
+                return
+            questionnaire_started = True
             answers = {}
             await show_security_question(hacked_interaction, 0, answers)
 
