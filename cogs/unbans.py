@@ -483,9 +483,12 @@ class Unbans(commands.Cog):
             if include_apps:
                 view.add_item(discord.ui.Button(label=text["apps_help"], style=discord.ButtonStyle.link, url=DEAUTHORIZE_APPS_URL))
 
-        def resource_view(include_cancel: bool = False):
+        def resource_view(timeout_interaction: discord.Interaction, include_cancel: bool = False):
             view = utils.RaiView(timeout=INTERACTION_TIMEOUT_SECONDS)
             add_help_links(view, include_mfa=True, include_apps=True)
+            async def on_timeout():
+                await timeout_interaction.edit_original_response(view=None)
+            view.on_timeout = on_timeout
             if include_cancel:
                 cancel_btn = discord.ui.Button(label=text["cancel"], style=discord.ButtonStyle.secondary)
                 view.add_item(cancel_btn)
@@ -509,7 +512,7 @@ class Unbans(commands.Cog):
                 else:
                     await interaction.response.edit_message(
                         content=f"{text['security_not_ready']}\n\n{text['security_intro']}",
-                        view=resource_view(include_cancel=True)
+                        view=resource_view(interaction, include_cancel=True)
                     )
                 return
 
@@ -520,6 +523,9 @@ class Unbans(commands.Cog):
             question_view.add_item(yes_btn)
             question_view.add_item(no_btn)
             add_help_links(question_view, include_mfa=question_help == "mfa", include_apps=question_help == "apps")
+            async def on_timeout():
+                await interaction.edit_original_response(view=None)
+            question_view.on_timeout = on_timeout
 
             async def yes_callback(q_interaction: discord.Interaction):
                 answers[answer_key] = True
@@ -543,6 +549,9 @@ class Unbans(commands.Cog):
         hacked_view.add_item(hacked_yes_button)
         hacked_view.add_item(hacked_no_button)
         hacked_view.add_item(hacked_cancel_button)
+        async def on_timeout():
+            await button_interaction.edit_original_response(view=None)
+        hacked_view.on_timeout = on_timeout
         questionnaire_started = False
 
         async def hacked_yes_callback(hacked_interaction: discord.Interaction):
