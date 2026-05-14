@@ -289,7 +289,7 @@ class Unbans(commands.Cog):
         dm_channel = button_interaction.user.dm_channel
         if not dm_channel:
             try:
-                await button_interaction.user.create_dm()
+                dm_channel = await button_interaction.user.create_dm()
             except (discord.Forbidden, discord.HTTPException):
                 pass
         dm_channel_link = ''
