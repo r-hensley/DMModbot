@@ -592,7 +592,7 @@ async def create_report_thread(author: discord.User, report_text: str,
         tags_to_add, _ = make_tags_list_for_forum_post(report_channel, tags)
 
         report_thread = (await report_channel.create_thread(name=thread_name,
-                                                            content=f"{entry_text}\n{thread_text}",
+                                                            content=f"{entry_text}\n{thread_text}"[:2000],
                                                             applied_tags=tags_to_add)).thread
 
         if not report_thread.starter_message:
