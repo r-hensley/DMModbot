@@ -22,10 +22,29 @@ class Submod(commands.Cog):
         return False
 
     @commands.command()
-    async def set_submod_role(self, ctx, role: discord.Role):
-        """Sets the submod role for this server. Submods have access to some mod commands, but not all."""
-        self.bot.db.setdefault('submod_role', {}).setdefault(ctx.guild.id, {})['id'] = role.id
-        await ctx.send(f"Submod role set to {role.mention}", allowed_mentions=discord.AllowedMentions.none())
+    @commands.check(hf.is_admin)
+    async def set_submod_role(self, ctx, *roles: discord.Role):
+        """Sets the submod roles for this server. Submods can use _send."""
+        if not roles:
+            await ctx.send("Please mention at least one role.")
+            return
+
+        unique_roles = []
+        seen_role_ids = set()
+        for role in roles:
+            if role.id not in seen_role_ids:
+                unique_roles.append(role)
+                seen_role_ids.add(role.id)
+
+        role_ids = [role.id for role in unique_roles]
+        self.bot.db.setdefault('submod_role', {})[ctx.guild.id] = {
+            'id': role_ids[0],
+            'ids': role_ids,
+        }
+        await hf.dump_json()
+
+        role_mentions = ", ".join(role.mention for role in unique_roles)
+        await ctx.send(f"Submod roles set to {role_mentions}", allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command()
     async def send(self, ctx: commands.Context, user_id: str, *, msg: str):

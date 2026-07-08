@@ -1010,21 +1010,50 @@ def is_admin(ctx):
     # otherwise just check normal mod role
     return mod_role in ctx.author.roles
 
+def get_submod_role_ids(guild_id: int) -> list[int]:
+    try:
+        submod_config = here.bot.db['submod_role'][guild_id]
+    except KeyError:
+        return []
+
+    role_ids = []
+
+    def append_role_id(role_id):
+        if role_id is None:
+            return
+        try:
+            role_id = int(role_id)
+        except (TypeError, ValueError):
+            return
+        if role_id not in role_ids:
+            role_ids.append(role_id)
+
+    if isinstance(submod_config, dict):
+        append_role_id(submod_config.get('id'))
+        ids = submod_config.get('ids', [])
+        if isinstance(ids, list):
+            for role_id in ids:
+                append_role_id(role_id)
+        else:
+            append_role_id(ids)
+    elif isinstance(submod_config, list):
+        for role_id in submod_config:
+            append_role_id(role_id)
+    else:
+        append_role_id(submod_config)
+
+    return role_ids
+
+
 def is_submod(ctx):
     if not ctx.guild:
-        return
+        return False
     if is_admin(ctx):
         return True
 
-    submod_roles = []
-
-    try:
-        r_id = here.bot.db['submod_role'][ctx.guild.id]['id']
-    except KeyError:
-        return
-    else:
-        submod_roles.append(ctx.guild.get_role(r_id))
-
-    for role in submod_roles:
-        if role in ctx.author.roles:
+    for role_id in get_submod_role_ids(ctx.guild.id):
+        role = ctx.guild.get_role(role_id)
+        if role and role in ctx.author.roles:
             return True
+
+    return False
