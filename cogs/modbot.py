@@ -89,6 +89,10 @@ class Modbot(commands.Cog):
         # dict w/ key ID and value of last left report room time
         if not hasattr(self.bot, "recently_in_report_room"):
             self.bot.recently_in_report_room = {}
+        # dict w/ key author ID and value of the report "kind" (e.g. "report_user") they picked while going
+        # through ask_report_type(), briefly held here until start_report_room() attaches it to thread_info
+        if not hasattr(self.bot, "pending_report_kind"):
+            self.bot.pending_report_kind = {}
 
     # main code is here
     @commands.Cog.listener()
@@ -424,14 +428,28 @@ class Modbot(commands.Cog):
         except asyncio.TimeoutError:
             return None, None  # no button pressed
         else:
+            pressed_custom_id = interaction.data.get("custom_id", "")
+
             initial_room_type = None
-            if interaction.data.get("custom_id", "") in [report_button.custom_id, account_q_button.custom_id]:
+            if pressed_custom_id in [report_button.custom_id, account_q_button.custom_id]:
                 initial_room_type = 'main'
-            elif interaction.data.get("custom_id", "") == server_q_button.custom_id:
+            elif pressed_custom_id == server_q_button.custom_id:
                 initial_room_type = 'secondary'
             else:
                 return None, None
-            
+
+            # remember which specific button was pressed (as opposed to just the room type) so that
+            # start_report_room() can tag the report as a "Report a User" ticket if applicable
+            if pressed_custom_id == report_button.custom_id:
+                report_kind = "report_user"
+            elif pressed_custom_id == account_q_button.custom_id:
+                report_kind = "account_question"
+            elif pressed_custom_id == server_q_button.custom_id:
+                report_kind = "server_question"
+            else:
+                report_kind = None
+            self.bot.pending_report_kind[author.id] = report_kind
+
             # wait for previous interaction to finish the response before starting the
             # new question to make sure the order of the messages appear properly
             for _ in range(20):
@@ -612,6 +630,13 @@ class Modbot(commands.Cog):
                 # add info about user to self.bot.db['reports']
                 await hf.add_report_to_db(author, report_thread, report_room_type)
 
+                # attach the specific report "kind" (e.g. "report_user") picked in ask_report_type(), if any,
+                # so the follow-up notice can tailor its content accordingly
+                report_kind = self.bot.pending_report_kind.pop(author.id, None)
+                thread_info_entry = self.bot.db['reports'].get(author.id)
+                if thread_info_entry is not None and report_kind:
+                    thread_info_entry['report_kind'] = report_kind
+
                 # send first message, notify user in DMs that the message successfully sent
                 await hf.deliver_first_report_msg_to_thread(report_thread, author, msg)
 
@@ -693,6 +718,55 @@ class Modbot(commands.Cog):
 
         else:
             await hf.try_add_reaction(msg, "📨")
+
+            # The user's very first message is delivered separately (outside of send_message()) when the
+            # report room is created. This is the first message that actually passes through send_message(),
+            # i.e. the user's *next* message after that initial connection.
+            if not thread_info.get('sent_followup_notice'):
+                if isinstance(open_report.source, discord.DMChannel):
+                    # The user sent a further message - let them know once that their messages are indeed
+                    # reaching the moderators.
+                    thread_info['sent_followup_notice'] = True
+                    await hf.dump_json()
+                    await self.send_followup_notice(open_report.source, thread_info.get('report_kind'))
+                elif isinstance(open_report.dest, discord.DMChannel):
+                    # A moderator replied before the user sent anything else. The user already has a real
+                    # response, so the reassurance notice would just be redundant - mark it as "sent" without
+                    # actually sending it so it never fires later either.
+                    thread_info['sent_followup_notice'] = True
+                    await hf.dump_json()
+
+    @staticmethod
+    async def send_followup_notice(dm_channel: discord.DMChannel, report_kind: Optional[str] = None):
+        """Sends a one-time embed to the user letting them know their messages are reaching the moderators.
+
+        This is sent for all report types. If the ticket is specifically a "Report a User" ticket
+        (report_kind == "report_user"), an additional section asking for evidence is appended."""
+        description = (
+            "-# Thanks for opening a ticket! We'll look into it and get back to you soon.\n\n"
+            "-# If you haven't received a reply yet, it's likely because the moderators are currently busy. \n\n"
+            "-# **Please be patient and don't close the ticket while you're waiting for a response**."
+        )
+
+        if report_kind == "report_user":
+            description += (
+                "\n\n-# In the meantime, please provide as much information as possible, including:\n"
+                "-# - The username of the user you're reporting\n"
+                "-# - Text or image evidence\n"
+                "-# - A recording, if available\n\n"
+                "-# Please note that without sufficient evidence, staff may be unable to take action "
+                "or may take longer to act. "
+            )
+
+        embed = discord.Embed(
+            title="Ticket Information",
+            description=description,
+            color=discord.Color.blurple()
+        )
+        try:
+            await dm_channel.send(embed=embed)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
     async def process_msg_content(self, msg, open_report):
         thread_info = open_report.thread_info
