@@ -82,7 +82,7 @@ class Modbot(Bot):
 
     async def setup_hook(self):
         for extension in ['cogs.modbot', 'cogs.main', 'cogs.admin', 'cogs.owner', 'cogs.unbans', 'cogs.events',
-                          'cogs.submod', 'cogs.report_status']:
+                          'cogs.submod', 'cogs.report_status', 'cogs.resolve_after']:
             try:
                 await self.load_extension(extension)
             except Exception as e:
@@ -91,7 +91,6 @@ class Modbot(Bot):
                 raise
 
         hf.setup(bot=self, loop=asyncio.get_event_loop())  # this is to define here.bot in the hf file
-            
 
 def run_bot():
     bot = Modbot()
