@@ -20,12 +20,10 @@ _UNIT_SECONDS = {
 }
 
 RESOLUTION_MESSAGE = (
-    "Hi! Since we haven't received the information we requested, we're going "
-    "to close this ticket for now. This isn't a permanent closure - "
-    "if you still need help, please feel free to reach out again at any time. "
-    "We'll be happy to assist!"
+    "Hi! Since we haven't heard back from you, we're going "
+    "to close this ticket for now. If you still need help, please feel free "
+    "to reach out again at any time. We'll be happy to assist!"
 )
-
 
 def parse_duration(time_str: str) -> Optional[timedelta]:
     if not time_str:
