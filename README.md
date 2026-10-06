@@ -1,5 +1,15 @@
 # DMModBot
 
+DM Modbot connects Discord users with server staff for reports, questions,
+and ban appeals through direct messages.
+
+### Terms and privacy
+
+- [Terms of Service](TERMS.md)
+- [Privacy Policy](PRIVACY.md)
+
+For support or privacy requests, contact **ryry013** on Discord.
+
 ### Cloning the Repo
 
 This repo uses git submodules, so when cloning be sure to use:
