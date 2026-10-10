@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import timedelta
 from typing import Optional
@@ -7,6 +8,9 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .utils import helper_functions as hf
+
+
+logger = logging.getLogger(__name__)
 
 
 _DURATION_PATTERN = re.compile(r'(\d+)\s*([smhdw])', re.IGNORECASE)
@@ -326,18 +330,20 @@ class ResolveAfter(commands.Cog):
             return
 
         for thread_id in due_thread_ids:
-            entry = scheduled.pop(
-                thread_id,
-                None,
-            )
+            entry = scheduled.get(thread_id)
 
             if entry is None:
                 continue
 
-            await self._resolve_ticket(
-                thread_id,
-                entry,
-            )
+            try:
+                await self._resolve_ticket(thread_id, entry)
+            except discord.HTTPException:
+                logger.warning("Could not resolve ticket %s; will retry", thread_id, exc_info=True)
+                continue
+
+            # A reply or a new schedule may have changed this entry while we waited.
+            if scheduled.get(thread_id) is entry:
+                del scheduled[thread_id]
 
         await hf.dump_json()
 
