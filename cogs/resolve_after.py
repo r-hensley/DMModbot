@@ -282,28 +282,22 @@ class ResolveAfter(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if not message.guild:
+        # Incoming reporter DMs include attachment, embed and sticker-only replies;
+        # their relayed copies in the thread do not always have a text prefix.
+        if message.author.bot or not isinstance(message.channel, discord.DMChannel):
+            return
+        if message.type not in (discord.MessageType.default, discord.MessageType.reply):
             return
 
-        scheduled = self.bot.db.get(
-            "scheduled_resolutions",
-            {},
-        )
-
-        if message.channel.id not in scheduled:
+        report = self.bot.db.get("reports", {}).get(message.author.id)
+        if report is None:
+            return
+        thread_id = report.get("thread_id")
+        scheduled = self.bot.db.get("scheduled_resolutions", {})
+        if thread_id not in scheduled:
             return
 
-        if not self.bot.user:
-            return
-
-        if message.author.id != self.bot.user.id:
-            return
-
-        if not (message.content or "").startswith(">>>"):
-            return
-
-        del scheduled[message.channel.id]
-
+        del scheduled[thread_id]
         await hf.dump_json()
 
     @tasks.loop(minutes=1)
