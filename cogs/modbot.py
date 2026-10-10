@@ -636,6 +636,7 @@ class Modbot(commands.Cog):
                 thread_info_entry = self.bot.db['reports'].get(author.id)
                 if thread_info_entry is not None and report_kind:
                     thread_info_entry['report_kind'] = report_kind
+                    await hf.dump_json()
 
                 # send first message, notify user in DMs that the message successfully sent
                 await hf.deliver_first_report_msg_to_thread(report_thread, author, msg)
