@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .utils import helper_functions as hf
+from .modbot import OpenReport
 
 
 logger = logging.getLogger(__name__)
@@ -330,13 +331,13 @@ class ResolveAfter(commands.Cog):
                 continue
 
             try:
-                await self._resolve_ticket(thread_id, entry)
+                completed = await self._resolve_ticket(thread_id, entry)
             except discord.HTTPException:
                 logger.warning("Could not resolve ticket %s; will retry", thread_id, exc_info=True)
                 continue
 
             # A reply or a new schedule may have changed this entry while we waited.
-            if scheduled.get(thread_id) is entry:
+            if completed and scheduled.get(thread_id) is entry:
                 del scheduled[thread_id]
 
         await hf.dump_json()
@@ -349,63 +350,75 @@ class ResolveAfter(commands.Cog):
         self,
         thread_id: int,
         entry: dict,
-    ):
+    ) -> bool:
         thread = self.bot.get_channel(thread_id)
+        if not isinstance(thread, discord.Thread):
+            try:
+                thread = await self.bot.fetch_channel(thread_id)
+            except discord.NotFound:
+                return True  # The thread was deleted; there is nothing left to archive.
 
         if not isinstance(thread, discord.Thread):
-            return
+            return True
 
-        if thread.archived:
-            return
+        report = next(
+            (report for report in self.bot.db.get("reports", {}).values()
+             if report.get("thread_id") == thread_id),
+            None,
+        )
+        if thread.archived and report is None:
+            return True  # The existing archive handler already closed this report.
 
         user = None
-
-        for report in self.bot.db.get(
-            "reports",
-            {},
-        ).values():
-
-            if report.get("thread_id") != thread_id:
-                continue
-
-            user_id = report.get("user_id")
-
+        modbot = None
+        if report is not None:
+            modbot = self.bot.get_cog("Modbot")
+            if modbot is None:
+                return False
+            user_id = report["user_id"]
             user = self.bot.get_user(user_id)
-
-            if not user:
+            if user is None:
                 try:
                     user = await self.bot.fetch_user(user_id)
-                except (
-                    discord.NotFound,
-                    discord.HTTPException,
-                ):
-                    user = None
+                except discord.NotFound:
+                    pass
 
-            break
+        # Fetching the thread or user gives reply/closure handlers time to run.
+        if self.bot.db.get("scheduled_resolutions", {}).get(thread_id) is not entry:
+            return False
+        if report is not None and self.bot.db.get("reports", {}).get(report["user_id"]) is not report:
+            return True
 
         embed = self._get_resolution_embed()
-
-        if user:
+        if user is not None:
             try:
                 await user.send(embed=embed)
-            except (
-                discord.Forbidden,
-                discord.HTTPException,
-            ):
+            except discord.HTTPException:
                 pass
 
         try:
             await thread.send(embed=embed)
-        except (
-            discord.Forbidden,
-            discord.HTTPException,
-        ):
+        except discord.HTTPException:
             pass
 
-        await hf.close_thread(
-            thread,
-            finish=True,
-        )
+        if report is not None and user is not None:
+            # Use the report lifecycle to disconnect the DM, record the closure and
+            # apply the usual cooldown, including for recovered archived threads.
+            await modbot.end_report(
+                OpenReport(report, user, thread, thread, user.dm_channel),
+                error=False,
+                finish=True,
+                notify=False,  # The Ticket Closed embed above already notified both sides.
+            )
+        else:
+            await hf.close_thread(thread, finish=True)
+            if report is not None:
+                reports = self.bot.db.get("reports", {})
+                if reports.get(report["user_id"]) is report:
+                    del reports[report["user_id"]]
+                await hf.dump_json()
+
+        return True
 
 
 async def setup(bot: commands.Bot):
