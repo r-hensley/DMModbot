@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -8,6 +9,10 @@ import discord
 from discord.ext import commands, tasks
 
 from .utils import helper_functions as hf
+from .modbot import OpenReport
+
+
+logger = logging.getLogger(__name__)
 
 
 ROOM_TYPES = {
@@ -73,21 +78,70 @@ class ReportStatus(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def prune_stale_reports(self) -> bool:
-        stale_user_ids = []
+        db_changed = False
+        reports = self.bot.db.get("reports", {})
 
-        for user_id, report in list(self.bot.db.get("reports", {}).items()):
-            thread = self.bot.get_channel(report.get("thread_id", 0))
+        for user_id, report in list(reports.items()):
+            thread_id = report.get("thread_id", 0)
+            thread = self.bot.get_channel(thread_id)
             if not isinstance(thread, discord.Thread):
-                stale_user_ids.append(user_id)
+                try:
+                    # Fetching by ID also finds archived threads absent from the cache.
+                    thread = await self.bot.fetch_channel(thread_id)
+                except discord.NotFound:
+                    if reports.get(user_id) is report:
+                        del reports[user_id]
+                        db_changed = True
+                    continue
+                except discord.HTTPException:
+                    logger.warning("Could not fetch report thread %s; will retry", thread_id, exc_info=True)
+                    continue
+
+            if not isinstance(thread, discord.Thread):
+                if reports.get(user_id) is report:
+                    del reports[user_id]
+                    db_changed = True
                 continue
 
-            if thread.archived:
-                stale_user_ids.append(user_id)
+            if not thread.archived or reports.get(user_id) is not report:
+                continue
 
-        for user_id in stale_user_ids:
-            self.bot.db["reports"].pop(user_id, None)
+            modbot = self.bot.get_cog("Modbot")
+            if modbot is None:
+                continue
 
-        return bool(stale_user_ids)
+            user = self.bot.get_user(user_id)
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except discord.NotFound:
+                    # The reporter no longer exists, so there is no user to notify.
+                    if reports.get(user_id) is report:
+                        del reports[user_id]
+                        db_changed = True
+                    continue
+                except discord.HTTPException:
+                    logger.warning("Could not fetch reporter %s; will retry", user_id, exc_info=True)
+                    continue
+            try:
+                dm_channel = user.dm_channel
+                if dm_channel is None:
+                    try:
+                        dm_channel = await user.create_dm()
+                    except discord.HTTPException:
+                        dm_channel = None
+                if reports.get(user_id) is not report:
+                    continue
+                await modbot.end_report(
+                    OpenReport(report, user, thread, thread, dm_channel),
+                    error=False,
+                    finish=True,
+                )
+                db_changed = True
+            except discord.HTTPException:
+                logger.warning("Could not close archived report %s; will retry", thread_id, exc_info=True)
+
+        return db_changed
 
     async def update_room_status(self, guild: discord.Guild, guild_config: dict, room_type: str) -> bool:
         room_meta = ROOM_TYPES[room_type]

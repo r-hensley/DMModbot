@@ -793,18 +793,18 @@ class Modbot(commands.Cog):
     # for when the room is to be closed and the database reset
     # the error argument tells whether the room is being closed normally or after an error
     # source is the DM channel, dest is the report room
-    async def end_report(self, open_report: OpenReport, error, finish=False):
-        await self.notify_end_thread(open_report.source, open_report.dest, error)
+    async def end_report(self, open_report: OpenReport, error, finish=False, notify=True):
+        if notify:
+            await self.notify_end_thread(open_report.source, open_report.dest, error)
 
-        # get thread from open_report object
-        thread: discord.Thread = self.bot.get_channel(open_report.thread_info['thread_id'])
+        # A recovered archived thread may not be in the bot's channel cache.
+        thread = open_report.thread
 
-        # delete report info from database
-        if open_report.user.id in self.bot.db['reports']:
-            del self.bot.db['reports'][open_report.user.id]
-
-        # close the thread
+        # Only disconnect the report once the thread has been closed successfully.
         await hf.close_thread(thread, finish)
+        if self.bot.db['reports'].get(open_report.user.id) is open_report.thread_info:
+            del self.bot.db['reports'][open_report.user.id]
+        self.bot.db.get('scheduled_resolutions', {}).pop(thread.id, None)
 
         # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
         self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
