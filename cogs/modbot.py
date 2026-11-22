@@ -1,21 +1,16 @@
 import asyncio
 import logging
-import os
-import re
 from dataclasses import dataclass
-from datetime import datetime
-from textwrap import dedent
 from typing import Optional, Union
 
 import discord
-from discord import Guild
 from discord.ext import commands
 
+from .report_intake import CloseReportView, ReportIntake, card_copy, status_card
 from .utils.db_utils import get_thread_id_to_thread_info
 from .utils import helper_functions as hf
 # from cogs.utils.BotUtils import bot_utils as utils
 
-dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 logger = logging.getLogger(__name__)
 
 # database structure
@@ -41,10 +36,6 @@ logger = logging.getLogger(__name__)
 #         "123446036178059265": "en-US"
 #     },
 # }
-
-SP_SERV_ID = 243838819743432704
-JP_SERV_ID = 189571157446492161
-
 
 async def _send_typing_notif(self, channel, user):
     if type(channel) != discord.DMChannel:
@@ -86,13 +77,22 @@ class OpenReport:
 class Modbot(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
+        self.intakes = {}
+        self.opening_reports = set()
+        self.closing_reports = set()
         # dict w/ key ID and value of last left report room time
         if not hasattr(self.bot, "recently_in_report_room"):
             self.bot.recently_in_report_room = {}
-        # dict w/ key author ID and value of the report "kind" (e.g. "report_user") they picked while going
-        # through ask_report_type(), briefly held here until start_report_room() attaches it to thread_info
-        if not hasattr(self.bot, "pending_report_kind"):
-            self.bot.pending_report_kind = {}
+
+    async def cog_load(self):
+        self.close_view = CloseReportView(self)
+        self.bot.add_view(self.close_view)
+
+    def cog_unload(self):
+        self.close_view.stop()
+        for intake in self.intakes.values():
+            intake.view.stop()
+        self.intakes.clear()
 
     # main code is here
     @commands.Cog.listener()
@@ -106,90 +106,48 @@ class Modbot(commands.Cog):
         """PM Bot"""
         # This function will handle new users who are not in a report room and trying to start a new report
         if isinstance(msg.channel, discord.DMChannel):  # in a PM
-            if user_status_result := await self.receive_users(msg):
-                if user_status_result == "BLOCKED_USER":
-                    await msg.reply("There has been some kind of error in joining that server's report room. Please "
-                                    "contact the mods directly.")
-                    return
-                # all the below statuses are expected and should be handled in the receive_users() function
-                if user_status_result in ['AlreadyInReport', 'CurrentlySettingUp']:
-                    # pass user to "find_current_guild() and potentially send_message()
-                    pass
-                elif user_status_result in ['RecentlyFinishedReport', 'UserPassedThrough', "OpeningMessageTooShort"]:
-                    return
-                else:
-                    raise Exception(f"Unhandled user reception status: {user_status_result}")
+            if await self.receive_users(msg):
+                return
 
         # sending a message during a report
         # it tries to connect a message to a report and deliver it to the right place (either report room or DM channel)
         open_report = await self.find_current_guild(msg)
         # can be None if the above message was not sent to one of the open report threads in a server: i.e., it's
         # a random unrelated message in a server in a random channel
-        if open_report:
+        if open_report and open_report.thread_info['thread_id'] not in self.closing_reports:
             try:
                 await self.send_message(msg, open_report)
             except Exception:
                 await self.end_report(open_report, error=True)
                 raise
 
-    async def receive_users(self, msg: discord.Message):
-        """This function is called first whenever any user messages Modbot.
+    async def receive_users(self, msg: discord.Message) -> bool:
+        user_id = msg.author.id
+        while intake := self.intakes.get(user_id):
+            if await intake.add_message(msg):
+                return True
 
-        It returns True if the user was not in any report rooms before and successfully admitted into one"""
-        # check if they're currently in a report already
-        if msg.author.id in list(self.bot.db['reports']):
-            return "AlreadyInReport"  # already in a report room somewhere
+        if user_id in self.bot.db['reports']:
+            return False
+        if user_id in self.opening_reports:
+            return True
 
-        # check if they're currently in the middle of setting up a report already
-        if msg.author.id in self.bot.db['settingup']:
-            # if not a number (numbers are probably the user trying to specify which guild they want to connect to)
-            if not msg.content.isdigit():
-                await hf.try_add_reaction(msg, "❌")
-            return "CurrentlySettingUp"
-
-        # then check if user just recently left a report room
         if time_remaining := self.check_if_recently_finished_report(msg):
             await msg.author.send(
                 f"You've recently left a report room. Please wait {time_remaining} more seconds before "
-                f"joining again.\nIf your message was something like 'goodbye', 'thanks', or similar, "
-                f"we appreciate it, but it is not necessary to open another room.")
-            return "RecentlyFinishedReport"
-        
-        # they're not in a report yet, but they should be good to start one
-        if len(msg.content or '') < 15:
-            await msg.author.send("❌❌ I could not start a report. "
-                                  "Please try to describe your issue with more detail ❌❌")
-            return "OpeningMessageTooShort"
-            
-        # at this point they should be cleared to join a new report
-        # try to put user into report room
-        else:
-            guild: discord.Guild
-            report_room_type: str  # "main" means main report room, "secondary" means secondary report room, "voice" means voice report room
-            try:  # the user selects to which server they want to connect
-                self.bot.db['settingup'].append(msg.author.id)
-                guild, report_room_type = await self.server_select(msg)
-            except Exception:
-                self.bot.db['settingup'].remove(msg.author.id)
-                await msg.author.send("WARNING: There's been an error. Setup will not continue.")
-                raise
+                "joining again. A new report is only needed if you still need help."
+            )
+            return True
 
-            # they've selected a server to make a report to, put them in that server's report room
+        intake = ReportIntake(self, msg)
+        self.intakes[user_id] = intake
+        async with intake.lock:
             try:
-                if guild:
-                    # check if they have been blocked by the /block command
-                    if report_room_type == "BLOCKED_USER":
-                        return "BLOCKED_USER"
-
-                    # assuming they haven't been blocked, continue here
-                    await self.start_report_room(msg.author, guild, msg,
-                                                 report_room_type)  # bring user to report room
-                return "UserPassedThrough"  # if it worked
+                await intake.welcome()
             except Exception:
-                await msg.author.send("WARNING: There's been an error. Setup will not continue.")
+                await intake.finish()
                 raise
-            finally:
-                self.bot.db['settingup'].remove(msg.author.id)
+        return True
 
     # for finding out which report session a certain message belongs to, None if not part of anything
     # we should only be here if a user is for sure in the report room
@@ -288,242 +246,18 @@ class Modbot(commands.Cog):
             current_user = msg.author
             return OpenReport(thread_info, current_user, report_thread, source, report_thread)
 
-    # for first entering a user into the report room
-    async def server_select(self, msg: discord.Message) -> Union[tuple[None, None], tuple[discord.Guild, str]]:
-        """From the entry message into the DMs by a user, ask them which server they want to connect to, and return
-        a guild object."""
-        shared_guilds = sorted(
-            [g for g in self.bot.guilds if msg.author in g.members], key=lambda x: x.name)
-
-        appeals_server = self.bot.get_guild(int(os.getenv("BAN_APPEALS_GUILD_ID") or 0))
-        if appeals_server in shared_guilds:
-            if len(shared_guilds) == 1:
-                await msg.channel.send("I couldn't find any common guilds between us besides the ban appeal server, "
-                                       "which doesn't accept DM reports. Have a nice day.")
-                return None, None
-            shared_guilds.remove(appeals_server)
-
-        guild: Optional[discord.Guild] = None
-        if not guild:
-            if len(shared_guilds) == 0:
-                await msg.channel.send("I couldn't find any common guilds between us. Frankly, I don't know how you're "
-                                       "messaging me. Have a nice day.")
-                return None, None
-            elif len(shared_guilds) == 1:
-                if shared_guilds[0].id in self.bot.db['guilds']:
-                    report_room_type: str
-                    # guild, report_room_type = await self.ask_report_type(msg.author, shared_guilds[0])
-                    # return guild, report_room_type
-                    guild = shared_guilds[0]
-
-                else:
-                    await msg.channel.send("We only share one guild, but that guild has not setup their report room"
-                                           " yet. Please tell the mods to type `_setup` in some channel.")
-                    return None, None
-            else:
-                msg_text = {
-                    "en": "Hello, thank you for messaging me. Please select which "
-                          "server you want to connect to. To do this, reply with the `number` before your "
-                          "server (for example, you can reply with the single number `3`).",
-                    
-                    "es": "Hola, gracias por enviarme un mensaje. Por favor, selecciona a qué servidor "
-                          "quieres conectarte. Para hacer esto, responde con el `número` antes de tu "
-                          "servidor (por ejemplo, puedes responder solo con el número `3`).",
-                    
-                    "ja": "こんにちは、メッセージありがとうございます。どのサーバーに接続したいかを選択してください。"
-                          "これを行うには、以下のサーバーの名前の前にある数字を書いて返信してください。"
-                          "(例えば、`3` という単一の数字で返信してください)。",
-                    
-                    "fr": "Bonjour, merci de m’avoir envoyé un message. Veuillez sélectionner à quel "
-                          "serveur vous voulez vous connecter. Pour cela, répondez avec le `numéro` placé "
-                          "avant votre serveur (par exemple, vous pouvez simplement répondre avec le numéro `3`).",
-                    
-                    "ar": "مرحبًا، شكرًا لإرسالك رسالة. من فضلك اختر إلى أي خادم تريد الاتصال. "
-                          "للقيام بذلك، أجب بالـ `رقم` الموجود قبل اسم الخادم الخاص بك "
-                          "(على سبيل المثال، يمكنك الرد فقط بالرقم `3`).",
-                    
-                    "zh": "你好，谢谢你发消息给我。请选择你想要连接的服务器。"
-                          "要做到这一点，请回复服务器名前的 `数字` "
-                          "(例如，你可以只回复数字 `3`)。"
-                }
-                
-                locale = hf.get_user_locale(msg.author.id)
-                msg_text = msg_text.get(locale, msg_text['en'])
-                index = 1
-                msg_embed = ''
-                for i_guild in shared_guilds:
-                    msg_embed += f"`{index})` "
-                    index += 1
-                    msg_embed += f"{i_guild.name}"
-                    msg_embed += "\n"
-                try:
-                    conf = await msg.channel.send(msg_text, embed=discord.Embed(description=msg_embed, color=0x00FF00))
-                except AttributeError:
-                    return None, None
-                try:
-                    resp = await self.bot.wait_for('message',
-                                                   check=lambda m: m.author == msg.author and m.channel == msg.channel,
-                                                   timeout=60.0)
-                except asyncio.TimeoutError:
-                    try:
-                        await conf.delete()
-                    except (discord.Forbidden, discord.HTTPException):
-                        pass
-                    await msg.channel.send("You've waited too long. Module closing.")
-                    return None, None
-                try:
-                    await conf.delete()
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
-
-                if resp.content.casefold() == 'cancel':
-                    return None, None
-                guild_selection = re.findall(r"^\d{1,2}$", resp.content)
-                if guild_selection:
-                    guild_selection = guild_selection[0]
-                    try:
-                        guild = shared_guilds[int(guild_selection) - 1]
-                    except IndexError:
-                        await msg.channel.send("I didn't understand which guild you responded with. "
-                                               "Please respond with only a single number.")
-                        return None, None
-                else:
-                    await msg.channel.send("I didn't understand which guild you responded with. "
-                                           "Please respond with only a single number.")
-                    return None, None
-
-        if guild.id not in self.bot.db['guilds']:
-            return None, None
-
-        # the output point of this function will check if report_room_type equals "BLOCKED_USER"
-        # if so, it'll propagate that error upwards so a report doesn't get started
-        # it is checking if a server has blocked this user
-        if guild:
-            blocked_users_dict = self.bot.db.get('blocked_users', {})
-            if msg.author.id in blocked_users_dict.get(guild.id, []):
-                return guild, "BLOCKED_USER"
-
-        guild, report_room_type = await self.ask_report_type(msg.author, guild)
-        return guild, report_room_type
-
-    async def ask_report_type(self, author: Union[discord.User, discord.Member],
-                              guild: discord.Guild) -> Union[tuple[None, None], tuple[Guild, str]]:
-        """After a user selects a server, this function will ask them which kind of report they want to make"""
-
-        # below function defines and sets up four buttons for the user to select what kind of report they want to make
-        buttons = await hf.setup_confirm_guild_buttons(guild, author)
-        if not buttons or len(buttons) != 4:
-            return None, None
-
-        report_button, account_q_button, server_q_button, cancel_button = buttons
-
-        # wait for the user to press a button
-        def check_for_button_press(i):
-            return i.type == discord.InteractionType.component and \
-                   i.data.get("custom_id", "") in [report_button.custom_id, account_q_button.custom_id,
-                                                   server_q_button.custom_id, cancel_button.custom_id]
-
-        try:
-            interaction = await self.bot.wait_for("interaction", timeout=180.0, check=check_for_button_press)
-        except asyncio.TimeoutError:
-            return None, None  # no button pressed
-        else:
-            pressed_custom_id = interaction.data.get("custom_id", "")
-
-            initial_room_type = None
-            if pressed_custom_id in [report_button.custom_id, account_q_button.custom_id]:
-                initial_room_type = 'main'
-            elif pressed_custom_id == server_q_button.custom_id:
-                initial_room_type = 'secondary'
-            else:
-                return None, None
-
-            # remember which specific button was pressed (as opposed to just the room type) so that
-            # start_report_room() can tag the report as a "Report a User" ticket if applicable
-            if pressed_custom_id == report_button.custom_id:
-                report_kind = "report_user"
-            elif pressed_custom_id == account_q_button.custom_id:
-                report_kind = "account_question"
-            elif pressed_custom_id == server_q_button.custom_id:
-                report_kind = "server_question"
-            else:
-                report_kind = None
-            self.bot.pending_report_kind[author.id] = report_kind
-
-            # wait for previous interaction to finish the response before starting the
-            # new question to make sure the order of the messages appear properly
-            for _ in range(20):
-                # noinspection PyUnresolvedReferences
-                if interaction.response.is_done():
-                    break
-                await asyncio.sleep(0.2)
-                
-            # Ask follow-up question about voice channels
-            final_room_type = await self.ask_voice_channel_question(author, initial_room_type)
-            return guild, final_room_type
-    
-    async def ask_voice_channel_question(self, author: Union[discord.User, discord.Member], 
-                                         initial_room_type: str) -> str:
-        """Ask the user if their report is related to voice channels"""
-        from cogs.utils.BotUtils import bot_utils as utils
-        
-        # Create buttons for Yes/No response
-        yes_button = discord.ui.Button(label="Yes", style=discord.ButtonStyle.primary)
-        no_button = discord.ui.Button(label="No", style=discord.ButtonStyle.secondary)
-        
-        view = utils.RaiView(timeout=180)
-        view.add_item(yes_button)
-        view.add_item(no_button)
-        
-        # Send the question to the user
-        if not author.dm_channel:
-            try:
-                await author.create_dm()
-            except (discord.Forbidden, discord.HTTPException):
-                return initial_room_type
-        
-        question_text = {'en': "Is this report related to the voice channels?",
-                         'es': "¿Este reporte está relacionado con los canales de voz?",
-                         'jp': "この通報はボイスチャンネルに関係していますか？",
-                         'fr': "Ce signalement est-il lié aux salons vocaux ?",
-                         'ar': "هل هذا البلاغ متعلق بالقنوات الصوتية؟",
-                         'zh': "这个举报和语音频道有关吗？"}
-        question_msg = await author.dm_channel.send(question_text.get(hf.get_user_locale(author.id),
-                                                                      question_text['en']),
-                                                    view=view)
-        
-        # Wait for the user to press a button
-        def check_for_voice_button_press(i):
-            return i.type == discord.InteractionType.component and \
-                   i.user.id == author.id and \
-                   i.data.get("custom_id", "") in [yes_button.custom_id, no_button.custom_id]
-        
-        try:
-            interaction = await self.bot.wait_for("interaction", timeout=180.0, check=check_for_voice_button_press)
-        except asyncio.TimeoutError:
-            # If timeout, default to the initial room type
-            try:
-                await question_msg.edit(content="No response received. Using default room type.", view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass
-            return initial_room_type
-        else:
-            # Delete the question message
-            try:
-                await question_msg.delete()
-            except (discord.NotFound, discord.HTTPException):
-                pass
-            
-            # Respond to the interaction
-            await interaction.response.send_message("Processing your selection...", ephemeral=True)
-            
-            # Determine the final room type based on the user's response
-            if interaction.data.get("custom_id", "") == yes_button.custom_id:
-                return 'voice'
-            else:
-                return initial_room_type
-            
     async def start_ban_appeal_room(self, author: discord.User, guild: discord.Guild,
+                                    appeal_text: str, report_room_type: str):
+        if author.id in self.opening_reports or author.id in self.bot.db['reports']:
+            await author.send("You already have a report or appeal opening. Continue in that conversation.")
+            return
+        self.opening_reports.add(author.id)
+        try:
+            await self._start_ban_appeal_room(author, guild, appeal_text, report_room_type)
+        finally:
+            self.opening_reports.discard(author.id)
+
+    async def _start_ban_appeal_room(self, author: discord.User, guild: discord.Guild,
                                     appeal_text: str, report_room_type: str):
         try:
             report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
@@ -581,85 +315,51 @@ class Modbot(commands.Cog):
             await self.notify_end_thread(meta_channel, author.dm_channel, True)
             raise
 
-    async def start_report_room(self, author: discord.User, guild: discord.Guild,
-                                msg: Optional[discord.Message],
-                                report_room_type: str):
-        """Performs initial code for bringing a user's first message into the report room and setting up the
-        connection between the user and the mods.
-
-        If this report is a ban appeal from the ban appeals server, then msg will be None and ban_appeal will be True"""
+    async def start_report_room(self, author, guild, messages, draft, report_room_type,
+                                *, report_kind=None, anonymous=False, dm_card_id=None) -> bool:
         try:
             report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
+            await hf.check_bot_perms(report_channel, meta_channel, guild, author, anonymous=anonymous)
+            await hf.deny_new_user_role_request(guild, author, draft, meta_channel, anonymous=anonymous)
         except hf.EndEarly:
-            return
+            return False
 
-        # Check if the bot has the permissions to send messages in the report channel and create threads.
+        report_thread = None
         try:
-            await hf.check_bot_perms(report_channel, meta_channel, guild, author)
-        except hf.EndEarly:
-            return
-
-        # Deny users who come to the bot without language roles (they're probably asking how to get roles)
-        try:
-            await hf.deny_new_user_role_request(guild, author, msg, meta_channel)
-        except hf.EndEarly:
-            return
-
-        async def open_room():
-            if not author.dm_channel:
-                await author.create_dm()
-            if isinstance(report_channel, discord.TextChannel):
-                await _safe_typing(report_channel)
-
-            await _safe_typing(author.dm_channel)
-            await asyncio.sleep(1)
-
-            try:
-                voice = (report_room_type == 'voice')  # True if report_room_type == 'voice'
-                report_thread = await hf.create_report_thread(author, msg.content, report_channel,
-                                                              ban_appeal=False, voice_report=voice)
-
-                # try to capture the modlog that rai will post, delete it, and repost it ourselves to the thread
+            report_thread = await hf.create_report_thread(
+                author, draft, report_channel, voice_report=report_room_type == 'voice', anonymous=anonymous,
+            )
+            if not anonymous:
                 await hf.repost_rai_modlog(report_thread)
-
-                # Send divider to report room splitting information from bot above and actual report messages below
-                invisible_character = "⠀"  # replacement of space to avoid whitespace trimming
-                vertical_space = f"**Report starts here\n__{' ' * 70}__**\n\n\n{invisible_character}"
-                await report_thread.send(vertical_space)
-
-                # add info about user to self.bot.db['reports']
-                await hf.add_report_to_db(author, report_thread, report_room_type)
-
-                # attach the specific report "kind" (e.g. "report_user") picked in ask_report_type(), if any,
-                # so the follow-up notice can tailor its content accordingly
-                report_kind = self.bot.pending_report_kind.pop(author.id, None)
-                thread_info_entry = self.bot.db['reports'].get(author.id)
-                if thread_info_entry is not None and report_kind:
-                    thread_info_entry['report_kind'] = report_kind
-                    await hf.dump_json()
-
-                # send first message, notify user in DMs that the message successfully sent
-                await hf.deliver_first_report_msg_to_thread(report_thread, author, msg)
-
-            except discord.Forbidden:
-                await author.send("Sorry, actually I can't send messages to the channel the mods had setup for me "
-                                  "anymore. Please tell them to check the permissions on the channel or to run the"
-                                  " setup command again.")
-                return
-
-            # Send user a message explaining that the connection to the room has been made and explaining roughly
-            # how to use the room. The message can be in English, Spanish, or Japanese depending on the user's locale.
-            await hf.notify_user_of_report_connection(author)
-
-        try:
-            await open_room()
+            await report_thread.send("**Report starts here**")
+            await hf.deliver_report_draft(report_thread, author, messages, draft, anonymous=anonymous)
+            await hf.add_report_to_db(author, report_thread, report_room_type,
+                                      report_kind=report_kind, anonymous=anonymous, dm_card_id=dm_card_id)
         except Exception:
-            if author.id in self.bot.db['reports']:
-                del self.bot.db['reports'][author.id]
-                await hf.dump_json()
-            await self.notify_end_thread(meta_channel, author.dm_channel, True)
+            if report_thread is not None:
+                self.bot.db['reports'].pop(author.id, None)
+                try:
+                    await hf.close_thread(report_thread)
+                    await hf.dump_json()
+                except Exception:
+                    logger.exception("Could not close incomplete report thread %s", report_thread.id)
             raise
+        return True
 
+    async def close_dm_report(self, user, channel, report):
+        if self.bot.db['reports'].get(user.id) is not report:
+            return
+        thread = self.bot.get_channel(report['thread_id'])
+        if thread is None:
+            try:
+                thread = await self.bot.fetch_channel(report['thread_id'])
+            except discord.NotFound:
+                if self.bot.db['reports'].get(user.id) is report:
+                    self.bot.db['reports'].pop(user.id, None)
+                    await self.update_dm_report_card(channel, user, report, error=True)
+                    await hf.dump_json()
+                return
+        await self.end_report(OpenReport(report, user, thread, channel, thread), error=False)
 
     async def send_message(self, msg: discord.Message, open_report: OpenReport):
         # ignore messages starting with _ or other bot prefixes, also ignore all bot messages
@@ -683,28 +383,15 @@ class Modbot(commands.Cog):
             return
 
         try:
-            if msg.embeds:
-                await open_report.dest.send(embeds=msg.embeds)
-
-            for attachment in msg.attachments:
-                try:
-                    file = await attachment.to_file()
-                except discord.HTTPException:
-                    await open_report.dest.send(f"{attachment.url}")
-                else:
-                    await open_report.dest.send(file=file)
-                    
-            for sticker in msg.stickers:
-                try:
-                    await open_report.dest.send(stickers=[sticker])
-                except (discord.HTTPException, discord.Forbidden):
-                    await open_report.dest.send(f"{getattr(sticker, 'url', str(sticker))}")
-
-            if cont:
-                await open_report.dest.send(cont)
-
-            if cont2:
-                await open_report.dest.send(cont2)
+            anonymous = open_report.dest == open_report.thread and thread_info.get('anonymous_reporter', False)
+            await hf.forward_report_media(open_report.dest, msg, anonymous=anonymous)
+            for part in (cont, cont2):
+                if part:
+                    if anonymous:
+                        await open_report.dest.send(part, allowed_mentions=discord.AllowedMentions.none(),
+                                                    suppress_embeds=True)
+                    else:
+                        await open_report.dest.send(part)
 
         except discord.Forbidden:
             if open_report.dest == open_report.user.dm_channel:
@@ -809,7 +496,7 @@ class Modbot(commands.Cog):
                 else:
                     cont = f">>> **Moderator {thread_info['mods'].index(msg.author.id) + 1}**: "
             else:
-                cont = f">>> {msg.author.mention}: "
+                cont = f">>> {hf.reporter_label(msg.author, thread_info.get('anonymous_reporter', False))}: "
 
             splice = 2000 - len(cont)
             cont += msg.content[:splice]
@@ -850,42 +537,47 @@ class Modbot(commands.Cog):
                     await target.send(content)
                 except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
                     pass
+    async def update_dm_report_card(self, channel, user, report, *, error):
+        if channel is None or not report.get('dm_card_id'):
             return
+        copy = card_copy(hf.get_user_locale(user.id))
+        view = status_card(copy['interrupted' if error else 'closed'])
+        try:
             try:
-                invisible_character = "⠀"  # To avoid whitespace trimming
-                s1 = f"**{invisible_character}\n\n__{' ' * 70}__**\n**" \
-                     f"Thank you, I have closed the room." \
-                     f"{' Messages in this thread will no longer be sent to the user' if is_source_thread else ''}**"
-                await source.send(s1)
+                await channel.get_partial_message(report['dm_card_id']).edit(view=view)
+            except discord.NotFound:
+                await channel.send(view=view)
+        except discord.HTTPException:
+            logger.warning("Could not update the closed report card %s", report['dm_card_id'])
 
-                s2 = f"**{invisible_character}\n\n\n__{' ' * 70}__**\n**" \
-                     f"Thank you, I have closed the room." \
-                     f"{' Messages in this thread will no longer be sent to the user' if is_dest_thread else ''}**"
-                await dest.send(s2)
-            except discord.Forbidden:
-                pass
-
-    # for when the room is to be closed and the database reset
-    # the error argument tells whether the room is being closed normally or after an error
-    # source is the DM channel, dest is the report room
     async def end_report(self, open_report: OpenReport, error, finish=False, notify=True):
-        if notify:
-            await self.notify_end_thread(open_report.source, open_report.dest, error)
+        user_id = open_report.user.id
+        report = open_report.thread_info
+        thread_id = report['thread_id']
+        if self.bot.db['reports'].get(user_id) is not report or thread_id in self.closing_reports:
+            return
 
-        # A recovered archived thread may not be in the bot's channel cache.
-        thread = open_report.thread
-
-        # Only disconnect the report once the thread has been closed successfully.
-        await hf.close_thread(thread, finish)
-        if self.bot.db['reports'].get(open_report.user.id) is open_report.thread_info:
-            del self.bot.db['reports'][open_report.user.id]
-        self.bot.db.get('scheduled_resolutions', {}).pop(thread.id, None)
-
-        # Add time the report ended to prevent users from quickly opening up the room immediately after it closes
-        self.bot.recently_in_report_room[open_report.user.id] = discord.utils.utcnow().timestamp()
-
-        await hf.log_record_of_report(thread, open_report.user)
-        await hf.dump_json()
+        self.closing_reports.add(thread_id)
+        try:
+            thread = open_report.thread
+            await hf.close_thread(thread, finish)
+            if self.bot.db['reports'].get(user_id) is report:
+                del self.bot.db['reports'][user_id]
+            self.bot.db.get('scheduled_resolutions', {}).pop(thread_id, None)
+            self.bot.recently_in_report_room[user_id] = discord.utils.utcnow().timestamp()
+            try:
+                if report.get('dm_card_id'):
+                    await self.update_dm_report_card(open_report.user.dm_channel, open_report.user, report, error=error)
+                    if notify:
+                        await self.notify_end_thread(thread, None, error)
+                elif notify:
+                    await self.notify_end_thread(open_report.source, open_report.dest, error)
+                if not report.get('anonymous_reporter'):
+                    await hf.log_record_of_report(thread, open_report.user)
+            finally:
+                await hf.dump_json()
+        finally:
+            self.closing_reports.discard(thread_id)
 
     @commands.Cog.listener()
     async def on_typing(self, channel, user, _):
@@ -952,7 +644,7 @@ class Modbot(commands.Cog):
     def check_if_recently_finished_report(self, msg):
         report_timeout = 30  # number of seconds to make a user wait after finishing a report to open another room
 
-        currently_in_settingup = msg.author.id in self.bot.db['settingup']
+        currently_in_settingup = msg.author.id in self.intakes
         currently_in_report_room = msg.author.id in self.bot.db['reports']
         if not currently_in_settingup and not currently_in_report_room:
             timestamp_of_last_report_end = getattr(self.bot, "recently_in_report_room", {}).get(msg.author.id, 0)

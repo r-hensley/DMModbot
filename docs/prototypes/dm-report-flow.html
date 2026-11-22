@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMModbot · Report flow concepts</title>
+<style>
+  :root {
+    color-scheme: light;
+    font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', Meiryo, 'Noto Sans JP', sans-serif;
+    color: #211d2a;
+    background: #f7f6f3;
+    --ink: #211d2a;
+    --muted: #625c6d;
+    --line: #ded9e5;
+    --accent: #50349e;
+    --accent-light: #ede6fb;
+    --surface: #fff;
+    --panel: #f5f1fb;
+    --good: #235b45;
+    --bad: #a02d4b;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; }
+  h1, h2, p { margin: 0; }
+  button, input, textarea, select { font: inherit; }
+  button, select { cursor: pointer; }
+  button:disabled, select:disabled { cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  ::selection { background: #e1d3fc; color: var(--ink); }
+  .page { max-width: 1112px; margin-inline: auto; padding: 0 36px 48px; }
+  .masthead {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--line); padding-block: 17px; font-size: .875rem;
+  }
+  .brand, .identity { display: flex; align-items: center; gap: 10px; font-weight: 690; }
+  .mark, .avatar {
+    display: grid; place-items: center; flex: none; width: 34px; height: 34px;
+    border-radius: 10px; background: var(--accent-light); color: var(--accent); font-weight: 740;
+  }
+  .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: white; }
+  .muted, .note { color: var(--muted); }
+  .intro { padding-block: 30px 26px; }
+  h1 { font-size: clamp(2.15rem, 1.55rem + 2vw, 3.55rem); line-height: 1.05; letter-spacing: -.038em; font-weight: 720; }
+  .intro p { margin-top: 9px; color: var(--muted); }
+  .workspace {
+    display: grid; grid-template-columns: 228px minmax(0, 1fr); grid-template-rows: auto 1fr;
+    grid-template-areas: 'settings preview' 'simulate preview'; gap: 18px 30px; align-items: start;
+  }
+  .settings { grid-area: settings; display: grid; gap: 18px; padding-top: 3px; }
+  .settings section { display: grid; gap: 7px; }
+  .settings section + section, .simulate { padding: 15px 0 0; border-top: 1px solid var(--line); }
+  .settings h2, .simulate h2 { font-size: .875rem; font-weight: 700; }
+  .settings .note { min-height: 2lh; }
+  .simulate { grid-area: simulate; display: grid; gap: 7px; }
+  .note { font-size: .8125rem; }
+  .flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; background: #ebe7ef; border-radius: 9px; padding: 4px; }
+  .flow button { width: 100%; background: transparent; border-color: transparent; padding: 6px; }
+  .flow button[aria-pressed="true"] { background: var(--surface); border-color: var(--line); color: var(--accent); }
+  .field { display: grid; min-width: 0; gap: 4px; font-size: .8125rem; font-weight: 650; }
+  select, textarea {
+    width: 100%; min-width: 0; color: var(--ink); background: var(--surface);
+    border: 1px solid #c8c0d4; border-radius: 7px; padding: 8px 10px;
+  }
+  select { min-height: 39px; padding-right: 24px; font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, .file-label, .button-preview {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid #c8c0d4; border-radius: 7px; background: var(--surface);
+    color: var(--ink); font-size: .875rem; font-weight: 650; padding: 7px 11px;
+    min-height: 37px; text-align: center;
+  }
+  button:hover:not(:disabled), .file-label:hover { background: var(--accent-light); border-color: #afa1ca; }
+  button.primary, .button-preview { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #422986; }
+  button.danger { color: var(--bad); border-color: #d8a6b4; }
+  button.danger:hover:not(:disabled) { background: #fcf0f3; }
+  button:disabled { background: #eeebf2; color: #6f667d; border-color: #ded8e7; }
+  .preview { grid-area: preview; background: var(--surface); border: 1px solid var(--line); border-radius: 15px; }
+  .dm-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 13px 20px; border-bottom: 1px solid var(--line);
+  }
+  .transcript, .transcript-messages { display: grid; gap: 17px; }
+  .transcript { padding: 16px 20px; }
+  .message { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .message .byline { font-size: .875rem; font-weight: 700; margin-bottom: 3px; }
+  .avatar.user { background: #eee9df; color: #5f4b33; }
+  .avatar.mod { background: #e4efe9; color: var(--good); }
+  .message-text, .draft-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .925rem; }
+  .attachments { color: var(--muted); font-size: .8125rem; overflow-wrap: anywhere; }
+  .card {
+    display: grid; gap: 10px; padding: 14px; background: var(--panel);
+    border: 1px solid #e1d8ed; border-radius: 11px;
+  }
+  .card h2 { font-size: 1.2rem; line-height: 1.25; letter-spacing: -.015em; }
+  .card h2:focus { outline: none; }
+  .card p { font-size: .875rem; }
+  .card .note { font-size: .8125rem; }
+  .card hr { width: 100%; border: 0; border-top: 1px solid #dcd3e8; margin: 0; }
+  .welcome-lines { display: grid; gap: 3px; }
+  .draft { padding-inline-start: 10px; border-inline-start: 1px solid #ab9cc5; }
+  .draft .draft-text { max-height: 8lh; overflow-y: auto; }
+  .draft-heading { margin-bottom: 2px; font-weight: 700; }
+  .status-good { color: var(--good); }
+  .status-bad { color: var(--bad); }
+  .composer { display: grid; gap: 7px; border-top: 1px solid var(--line); padding: 12px 20px 15px; }
+  .composer textarea { display: block; resize: vertical; min-height: 44px; max-height: 10lh; }
+  .composer .actions { justify-content: space-between; }
+  .file-label { cursor: pointer; }
+  .file-label:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  dialog { width: min(460px, calc(100% - 32px)); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 19px; }
+  dialog::backdrop { background: #1d132b80; }
+  dialog form { display: grid; gap: 12px; }
+  dialog h2 { font-size: 1.2rem; }
+  dialog textarea { resize: vertical; }
+  @media (max-width: 760px) {
+    .page { padding-inline: 18px; }
+    .workspace {
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto;
+      grid-template-areas: 'settings' 'preview' 'simulate'; gap: 20px;
+    }
+    .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+    .settings section + section { padding-top: 0; border: 0; }
+  }
+  @media (max-width: 450px) {
+    .page { padding-inline: 10px; }
+    .intro { padding-block: 22px 17px; }
+    .flow button { font-size: .8125rem; padding-inline: 2px; }
+    select { padding-inline: 7px 3px; }
+    .dm-header, .transcript, .composer { padding-inline: 10px; }
+    .message { grid-template-columns: 26px minmax(0, 1fr); gap: 6px; }
+    .avatar { width: 26px; height: 26px; font-size: .75rem; border-radius: 7px; }
+    .card { padding: 10px; }
+  }
+  @media (pointer: coarse) {
+    button, select, .file-label { min-height: 44px; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="masthead">
+    <span class="brand"><span class="mark" aria-hidden="true">M</span> DMModbot</span>
+    <span class="muted">Components V2 mockup</span>
+  </header>
+  <div class="intro">
+    <h1>Reporting in DMs</h1>
+    <p>See the welcome prompt and the report card that follows.</p>
+  </div>
+  <div class="workspace">
+    <aside class="settings" aria-label="Preview controls">
+      <section aria-labelledby="flow-title">
+        <h2 id="flow-title">Setup flow</h2>
+        <div class="flow" role="group" aria-label="Setup flow">
+          <button type="button" data-flow="compact" aria-pressed="true">Compact</button>
+          <button type="button" data-flow="guided" aria-pressed="false">Guided</button>
+        </div>
+        <p class="note" id="flow-summary"></p>
+      </section>
+      <section aria-label="Starting conditions">
+        <label class="field">Starting scenario
+          <select id="scenario">
+            <option value="multiple">Many servers</option>
+            <option value="single">One server</option>
+            <option value="greeting">Just “hi”</option>
+            <option value="none">No eligible servers</option>
+          </select>
+        </label>
+        <label class="field">Discord language at start
+          <select id="client-language">
+            <option value="en">English</option>
+            <option value="es" selected>Español</option>
+            <option value="ja">日本語</option>
+          </select>
+        </label>
+      </section>
+    </aside>
+    <section class="preview" aria-label="Direct message preview">
+      <header class="dm-header">
+        <span class="identity"><span class="avatar" aria-hidden="true">M</span> DMModbot</span>
+        <span id="dm-label" class="note">Direct message</span>
+      </header>
+      <div class="transcript">
+        <div id="before-card" class="transcript-messages"></div>
+        <article class="message" id="welcome-message" aria-label="DMModbot welcome prompt">
+          <div class="avatar" aria-hidden="true">M</div>
+          <div>
+            <p class="byline">DMModbot</p>
+            <div class="card">
+              <div class="welcome-lines">
+                <p lang="en">Push this button to start.</p>
+                <p lang="es">Presiona este botón para empezar.</p>
+                <p lang="ja">このボタンを押すと始まります。</p>
+                <p lang="fr">Appuie sur ce bouton pour commencer.</p>
+                <p lang="ar" dir="auto">اضغط على هذا الزر للبدء.</p>
+                <p lang="zh">点击此按钮开始。</p>
+              </div>
+              <div class="actions"><span class="button-preview">Push here</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="message" id="bot-message" aria-labelledby="card-title">
+          <div class="avatar" aria-hidden="true">M</div>
+          <div>
+            <p class="byline">DMModbot</p>
+            <div class="card" id="report-card"></div>
+          </div>
+        </article>
+        <div id="after-card" class="transcript-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      </div>
+      <p class="visually-hidden" id="announcement" role="status"></p>
+      <form class="composer" id="composer">
+        <label class="visually-hidden" for="compose-text" id="compose-label"></label>
+        <textarea id="compose-text" rows="1" maxlength="2000"></textarea>
+        <p id="pending-files" class="attachments" hidden></p>
+        <div class="actions">
+          <label class="file-label">
+            <span id="attach-label"></span>
+            <input class="visually-hidden" type="file" id="attachment" multiple>
+          </label>
+          <button type="submit" class="primary" id="compose-send" disabled></button>
+        </div>
+      </form>
+    </section>
+    <section class="simulate" aria-labelledby="simulate-title">
+      <h2 id="simulate-title">Preview events</h2>
+      <div class="actions">
+        <button type="button" data-simulate="expire">Expire draft</button>
+        <button type="button" data-simulate="failure" aria-pressed="false">Fail next send</button>
+        <button type="button" data-simulate="reply" disabled>Moderator replies</button>
+        <button type="button" data-simulate="reset">Reset</button>
+      </div>
+      <p class="note" id="failure-note" role="status" hidden>The next send to moderators will fail.</p>
+    </section>
+  </div>
+  <dialog id="edit-dialog" aria-labelledby="edit-title">
+    <form method="dialog">
+      <h2 id="edit-title"></h2>
+      <label class="field"><span id="edit-label"></span>
+        <textarea id="edit-text" rows="5" maxlength="2000"></textarea>
+      </label>
+      <div class="actions">
+        <button id="edit-save" class="primary" value="save"></button>
+        <button id="edit-cancel" value="cancel"></button>
+      </div>
+    </form>
+  </dialog>
+</main>
+<script>
+  'use strict';
+  const copy = {
+    en: {
+      dm: 'Direct message', you: 'You', mod: 'Moderator 1', start: 'Contact the moderators',
+      private: 'Moderators will see your draft when you select Send report.',
+      server: 'Server', chooseServer: 'Choose a server', topic: 'Topic', chooseTopic: 'Choose a topic',
+      report: 'Report a user', account: 'Account question', question: 'Server question', voice: 'Voice chat issue',
+      destination: 'Where should this go?', destinationHint: 'Choose the server whose moderators should see your report.',
+      review: 'Review your report', draft: 'Report draft', empty: 'Add a message or attachment below.',
+      edit: 'Edit draft', editLabel: 'Report message', save: 'Save draft', next: 'Continue', back: 'Back',
+      send: 'Send report', cancel: 'Cancel', anonymous: 'Report anonymously', on: 'On', off: 'Off',
+      anonymousSent: 'Report sent anonymously',
+      compose: 'Write to DMModbot', add: 'Add to draft', message: 'Send message', attach: 'Attach files',
+      hasPending: 'Add the message below to your draft before sending the report.', sent: 'Report sent',
+      connected: 'The moderators have your report. New messages and attachments here go to them.',
+      wait: 'Moderator replies will appear here when they respond.', close: 'Close conversation',
+      confirm: 'Close this conversation?', closeHint: 'Closing ends the chat with the moderators. They’ll still have the report you sent.',
+      keep: 'Keep open', closed: 'Conversation closed', closedHint: 'Messages in this DM will no longer go to the moderators of this report.',
+      canceled: 'Report canceled', canceledHint: 'Your draft was discarded without sending it to the moderators.',
+      expired: 'Setup expired', expiredHint: 'Start again to continue with your draft.', restart: 'Resume draft',
+      failed: 'Report couldn’t be sent', failedHint: 'Your draft is still here. Try sending it again.', retry: 'Try again',
+      relayFailed: 'Conversation interrupted', relayHint: 'Your last message couldn’t be sent, and the chat has closed. You can copy the message below.',
+      newReport: 'Start another report', none: 'No servers available',
+      noneHint: 'We don’t share a server that accepts DM reports. Contact the server’s moderators directly.',
+      file: 'Attachments', draftUpdated: 'Draft updated', delivered: 'Delivered to moderators', failedMessage: 'Delivery failed',
+    },
+    es: {
+      dm: 'Mensaje directo', you: 'Tú', mod: 'Moderador 1', start: 'Contactar con moderación',
+      private: 'El equipo de moderación verá tu borrador cuando selecciones Enviar reporte.',
+      server: 'Servidor', chooseServer: 'Elige un servidor', topic: 'Tema', chooseTopic: 'Elige un tema',
+      report: 'Reportar a un usuario', account: 'Pregunta sobre mi cuenta', question: 'Pregunta sobre el servidor', voice: 'Problema de voz',
+      destination: '¿Adónde va tu reporte?', destinationHint: 'Elige el servidor cuyos moderadores deben recibir tu reporte.',
+      review: 'Revisa tu reporte', draft: 'Borrador del reporte', empty: 'Añade un mensaje o archivo abajo.',
+      edit: 'Editar borrador', editLabel: 'Mensaje del reporte', save: 'Guardar borrador', next: 'Continuar', back: 'Volver',
+      send: 'Enviar reporte', cancel: 'Cancelar', anonymous: 'Reportar de forma anónima', on: 'Sí', off: 'No',
+      anonymousSent: 'Reporte anónimo enviado',
+      compose: 'Escribe a DMModbot', add: 'Añadir al borrador', message: 'Enviar mensaje', attach: 'Adjuntar archivos',
+      hasPending: 'Añade el mensaje de abajo al borrador antes de enviar el reporte.', sent: 'Reporte enviado',
+      connected: 'El equipo de moderación recibió tu reporte. Los mensajes y archivos que envíes aquí le llegarán al equipo.',
+      wait: 'Las respuestas de moderación aparecerán aquí.', close: 'Cerrar conversación',
+      confirm: '¿Cerrar esta conversación?', closeHint: 'Al cerrar, termina el chat con moderación. El equipo conservará el reporte que enviaste.',
+      keep: 'Dejar abierta', closed: 'Conversación cerrada', closedHint: 'Los mensajes de este chat ya no se enviarán al equipo de moderación de este reporte.',
+      canceled: 'Reporte cancelado', canceledHint: 'El borrador se descartó sin enviarlo a moderación.',
+      expired: 'La sesión caducó', expiredHint: 'Vuelve a abrir el borrador para continuar.', restart: 'Continuar con el borrador',
+      failed: 'No se pudo enviar el reporte', failedHint: 'Tu borrador sigue aquí. Intenta enviarlo de nuevo.', retry: 'Volver a intentar',
+      relayFailed: 'Conversación interrumpida', relayHint: 'El último mensaje no se pudo enviar y el chat se cerró. Puedes copiar el mensaje de abajo.',
+      newReport: 'Iniciar otro reporte', none: 'No hay servidores disponibles',
+      noneHint: 'No compartimos ningún servidor que acepte reportes por mensaje directo. Contacta directamente con sus moderadores.',
+      file: 'Archivos adjuntos', draftUpdated: 'Borrador actualizado', delivered: 'Entregado a moderación', failedMessage: 'No se pudo entregar',
+    },
+    ja: {
+      dm: 'ダイレクトメッセージ', you: 'あなた', mod: 'モデレーター 1', start: 'モデレーターに連絡する',
+      private: '「通報を送信」を選ぶと、下書きがモデレーターに届きます。',
+      server: 'サーバー', chooseServer: 'サーバーを選択', topic: '用件', chooseTopic: '用件を選択',
+      report: 'ユーザーを通報', account: 'アカウントについての質問', question: 'サーバーについての質問', voice: 'ボイスチャットでの問題',
+      destination: 'どのサーバーに連絡しますか？', destinationHint: '通報を受け取るモデレーターがいるサーバーを選んでください。',
+      review: '通報内容を確認する', draft: '通報の下書き', empty: '下の欄から、内容やファイルを追加してください。',
+      edit: '下書きを編集', editLabel: '通報内容', save: '下書きを保存', next: '続ける', back: '戻る',
+      send: '通報を送信', cancel: 'キャンセル', anonymous: '匿名で通報', on: 'オン', off: 'オフ',
+      anonymousSent: '匿名で通報を送信しました',
+      compose: 'メッセージを入力', add: '下書きに追加', message: 'メッセージを送信', attach: 'ファイルを添付',
+      hasPending: '通報を送る前に、下のメッセージを下書きに追加してください。', sent: '通報を送信しました',
+      connected: 'モデレーターに通報が届きました。ここで送信したメッセージやファイルもモデレーターに届きます。',
+      wait: 'モデレーターからの返信はここに届きます。', close: '会話を終了',
+      confirm: '会話を終了しますか？', closeHint: 'モデレーターとの会話を終了します。送信済みの通報はモデレーターの手元に残ります。',
+      keep: '会話を続ける', closed: '会話を終了しました', closedHint: 'この通報を担当したモデレーターへのメッセージ転送は終了しました。',
+      canceled: '通報をキャンセルしました', canceledHint: '下書きを破棄しました。モデレーターには送信されていません。',
+      expired: '操作の有効期限が切れました', expiredHint: '下書きを開き直して続けてください。', restart: '下書きを開く',
+      failed: '通報を送信できませんでした', failedHint: '下書きは残っています。もう一度お試しください。', retry: '再試行',
+      relayFailed: '会話が中断されました', relayHint: '最後のメッセージを送信できなかったため、会話を終了しました。下のメッセージをコピーできます。',
+      newReport: '新しい通報を始める', none: '利用できるサーバーがありません',
+      noneHint: 'DMで通報を受け付けている共通のサーバーがありません。サーバーのモデレーターに直接連絡してください。',
+      file: '添付ファイル', draftUpdated: '下書きを更新しました', delivered: 'モデレーターに送信済み', failedMessage: '送信できませんでした',
+    },
+  };
+
+  const get = (id) => document.getElementById(id);
+  const servers = ['Language Exchange', 'Study Café', 'Weekend Gaming'];
+  const opening = 'Someone keeps sending me unwanted DMs after I asked them to stop.';
+  const reply = 'Thanks for letting us know. Can you share a message link or a screenshot when you have a chance?';
+  const topics = ['report', 'account', 'question', 'voice'];
+  const card = get('report-card');
+  const composer = get('composer');
+  const composeText = get('compose-text');
+  const attachment = get('attachment');
+  const editDialog = get('edit-dialog');
+  let flow = 'compact';
+  let scenario = 'multiple';
+  let locale = get('client-language').value;
+  let phase;
+  let server;
+  let topic;
+  let anonymous;
+  let draft;
+  let files;
+  let before;
+  let after;
+  let failNext;
+  let shownReplies;
+  let resumePhase;
+
+  const t = (key) => copy[locale][key];
+  const choices = () => scenario === 'none' ? [] : scenario === 'single' ? [servers[0]] : servers;
+  const pending = () => composeText.value.trim() || attachment.files.length;
+  const ready = () => Boolean(server && topic && (draft.trim() || files.length) && !pending());
+  const settingUp = () => ['setup', 'review', 'failed', 'expired'].includes(phase);
+  const canCompose = () => ['setup', 'review', 'failed', 'open'].includes(phase);
+  const changed = (focus = false) => {
+    render();
+    if (typeof focus === 'string') card.querySelector(`[data-action="${focus}"]`).focus();
+    else if (focus) get('card-title').focus();
+  };
+
+  function reset(seed = true) {
+    phase = choices().length ? 'setup' : 'none';
+    server = choices().length === 1 ? choices()[0] : '';
+    topic = '';
+    anonymous = false;
+    const first = seed ? (scenario === 'greeting' ? 'hi' : opening) : '';
+    draft = phase === 'none' || scenario === 'greeting' ? '' : first;
+    files = [];
+    failNext = false;
+    shownReplies = false;
+    resumePhase = 'setup';
+    before = first ? [{ who: 'you', text: first }] : [];
+    after = [];
+    composer.reset();
+    changed(!seed);
+  }
+
+  function safeText(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[char]);
+  }
+
+  function select(key, selected, options, placeholder) {
+    const blank = placeholder ? `<option value="" disabled${selected ? '' : ' selected'}>${t(placeholder)}</option>` : '';
+    return `<label class="field">${t(key)}
+      <select data-choice="${key}">${blank}${options.map(([value, label]) =>
+        `<option value="${safeText(value)}"${value === selected ? ' selected' : ''}>${safeText(label)}</option>`).join('')}
+      </select></label>`;
+  }
+
+  function button(action, label, style = '', disabled = false) {
+    return `<button type="button" data-action="${action}" class="${style}"${disabled ? ' disabled' : ''}>${t(label)}</button>`;
+  }
+
+  const actionRow = (...items) => `<div class="actions">${items.join('')}</div>`;
+  const title = (key, style = '') => `<h2 class="${style}" id="card-title" tabindex="-1">${t(key)}</h2>`;
+  const text = (key, style = '') => `<p class="${style}">${t(key)}</p>`;
+  const destination = () => `<p class="note">${safeText(server)}${topic ? ' · ' + t(topic) : ''}</p>`;
+  const fileList = (names = []) => names.length ? `<p class="attachments">${t('file')} · ${names.map(safeText).join(', ')}</p>` : '';
+  const preview = () => `<div class="draft">
+    ${text('draft', 'draft-heading')}
+    <div class="draft-text">${draft.trim() ? safeText(draft) : (files.length ? '' : t('empty'))}</div>
+    ${fileList(files)}</div>`;
+
+  function renderCard() {
+    const serverControl = choices().length === 1 ? destination() : select('server', server, choices().map((name) => [name, name]), 'chooseServer');
+    const topicControl = select('topic', topic, topics.map((value) => [value, t(value)]), 'chooseTopic');
+    const cancel = button('cancel', 'cancel');
+    const edit = button('edit', 'edit');
+    const anonymity = actionRow(`<button type="button" data-action="anonymous" aria-label="${t('anonymous')}"
+      aria-pressed="${anonymous}" class="${anonymous ? 'primary' : ''}">${t('anonymous')} · ${t(anonymous ? 'on' : 'off')}</button>`);
+    const newReport = actionRow(button('new', 'newReport', 'primary'));
+    const pendingHint = `<p class="note" id="pending-hint"${pending() ? '' : ' hidden'}>${t('hasPending')}</p>`;
+    const send = button('send', phase === 'failed' ? 'retry' : 'send', 'primary', !ready());
+    let contents;
+
+    switch (phase) {
+      case 'setup':
+        contents = flow === 'compact'
+          ? title('start') + text('private') + serverControl + topicControl + '<hr>' + preview() +
+            pendingHint + anonymity + actionRow(send, edit, cancel)
+          : title('destination') + text('destinationHint') + text('private', 'note') + serverControl + topicControl +
+            actionRow(button('review', 'next', 'primary', !(server && topic)), cancel);
+        break;
+      case 'failed':
+      case 'review':
+        contents = phase === 'failed' ? title('failed', 'status-bad') + text('failedHint') : title('review') + text('private');
+        contents += destination() + '<hr>' + preview() + pendingHint + anonymity +
+          actionRow(send, edit, button('back', 'back'), cancel);
+        break;
+      case 'open':
+        contents = title(anonymous ? 'anonymousSent' : 'sent', 'status-good') + destination() + text('connected') +
+          (shownReplies ? '' : text('wait', 'note')) + actionRow(button('confirm', 'close', 'danger'));
+        break;
+      case 'confirm':
+        contents = title('confirm') + destination() + text('closeHint') +
+          actionRow(button('close', 'close', 'danger'), button('keep', 'keep'));
+        break;
+      case 'closed':
+        contents = title('closed') + destination() + text('closedHint') + newReport;
+        break;
+      case 'relayFailed':
+        contents = title('relayFailed', 'status-bad') + destination() + text('relayHint') + newReport;
+        break;
+      case 'canceled':
+        contents = title('canceled') + text('canceledHint') + newReport;
+        break;
+      case 'expired':
+        contents = title('expired') + text('expiredHint') + actionRow(button('resume', 'restart', 'primary'), cancel);
+        break;
+      case 'none':
+        contents = title('none') + text('noneHint');
+        break;
+    }
+    card.innerHTML = contents;
+    get('bot-message').lang = locale;
+  }
+
+  function message({ who, text: body, attachments, status }) {
+    const initials = who === 'you' ? 'Y' : 'M';
+    const line = document.createElement('div');
+    line.className = 'message';
+    line.innerHTML = `<div class="avatar ${who}" aria-hidden="true">${initials}</div>
+      <div><p class="byline" lang="${locale}">${t(who)}</p>
+      <p class="message-text" dir="auto"></p>${fileList(attachments)}
+      ${status ? `<p lang="${locale}" class="note ${status === 'delivered' ? 'status-good' : 'status-bad'}">${t(status)}</p>` : ''}</div>`;
+    const bodyElement = line.querySelector('.message-text');
+    bodyElement.textContent = body || '';
+    bodyElement.hidden = !body;
+    return line;
+  }
+
+  function syncComposer() {
+    const names = Array.from(attachment.files, (file) => file.name);
+    const pendingFiles = get('pending-files');
+    pendingFiles.hidden = !names.length;
+    pendingFiles.textContent = names.length ? `${t('file')} · ${names.join(', ')}` : '';
+    get('compose-send').disabled = !pending();
+    const sendReport = card.querySelector('[data-action="send"]');
+    if (sendReport) {
+      sendReport.disabled = !ready();
+      get('pending-hint').hidden = !pending();
+    }
+  }
+
+  function render() {
+    renderCard();
+    get('before-card').replaceChildren(...before.map(message));
+    const liveLog = get('after-card');
+    if (liveLog.childElementCount > after.length || liveLog.lang !== locale) {
+      liveLog.replaceChildren(...after.map(message));
+    } else {
+      liveLog.append(...after.slice(liveLog.childElementCount).map(message));
+    }
+    liveLog.lang = locale;
+    get('before-card').hidden = !before.length;
+    get('welcome-message').hidden = !before.length;
+    liveLog.hidden = !after.length;
+    get('dm-label').textContent = t('dm');
+    get('dm-label').lang = locale;
+    get('flow-summary').textContent = flow === 'compact' ?
+      'Pick a server and topic, then send from one card.' :
+      'Choose where it goes, then review the draft on a separate step.';
+    composer.hidden = !canCompose();
+    composer.lang = locale;
+    get('compose-label').textContent = t('compose');
+    get('attach-label').textContent = t('attach');
+    composeText.placeholder = t('compose');
+    get('compose-send').textContent = t(phase === 'open' ? 'message' : 'add');
+    syncComposer();
+    document.querySelector('[data-simulate="expire"]').disabled = !settingUp() || phase === 'expired';
+    const failure = document.querySelector('[data-simulate="failure"]');
+    failure.disabled = !canCompose();
+    failure.setAttribute('aria-pressed', String(failNext));
+    get('failure-note').hidden = !failNext;
+    document.querySelector('[data-simulate="reply"]').disabled = phase !== 'open' || shownReplies;
+  }
+
+  card.addEventListener('change', (event) => {
+    const control = event.target;
+    const field = control.dataset.choice;
+    if (field === 'server') server = control.value;
+    if (field === 'topic') topic = control.value;
+    render();
+    card.querySelector(`[data-choice="${field}"]`).focus();
+  });
+
+  card.addEventListener('click', (event) => {
+    const action = event.target.closest('button')?.dataset.action;
+    if (!action) return;
+    switch (action) {
+      case 'anonymous':
+        anonymous = !anonymous;
+        changed('anonymous');
+        return;
+      case 'review': phase = 'review'; break;
+      case 'back': phase = 'setup'; break;
+      case 'confirm': phase = 'confirm'; break;
+      case 'keep': phase = 'open'; break;
+      case 'close': phase = 'closed'; failNext = false; break;
+      case 'resume': phase = resumePhase; break;
+      case 'cancel':
+        draft = '';
+        files = [];
+        failNext = false;
+        composer.reset();
+        phase = 'canceled';
+        break;
+      case 'send':
+        if (!ready()) return;
+        phase = failNext ? 'failed' : 'open';
+        failNext = false;
+        if (phase === 'open') { draft = ''; files = []; }
+        break;
+      case 'edit':
+        render();
+        editDialog.lang = locale;
+        get('edit-title').textContent = t('edit');
+        get('edit-label').textContent = t('editLabel');
+        get('edit-save').textContent = t('save');
+        get('edit-cancel').textContent = t('cancel');
+        get('edit-text').value = draft;
+        editDialog.returnValue = '';
+        editDialog.showModal();
+        return;
+      case 'new': reset(false); return;
+    }
+    changed(true);
+  });
+
+  editDialog.addEventListener('close', () => {
+    if (editDialog.returnValue === 'save') draft = get('edit-text').value;
+    changed('edit');
+  });
+
+  composer.addEventListener('input', syncComposer);
+  composer.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!canCompose() || !pending()) return;
+    const body = composeText.value.trim();
+    const attachments = Array.from(attachment.files, (file) => file.name);
+    const outgoing = { who: 'you', text: body, attachments };
+    composer.reset();
+    if (phase === 'open') {
+      if (['end', 'close'].includes(body.toLowerCase()) && !attachments.length) {
+        phase = 'closed';
+        failNext = false;
+      } else {
+        outgoing.status = failNext ? 'failedMessage' : 'delivered';
+        after.push(outgoing);
+        if (failNext) phase = 'relayFailed';
+        failNext = false;
+      }
+    } else {
+      draft = [draft, body].filter(Boolean).join('\n');
+      files.push(...attachments);
+      after.push(outgoing);
+      get('announcement').lang = locale;
+      get('announcement').textContent = t('draftUpdated');
+    }
+    changed(!canCompose());
+    if (canCompose()) composeText.focus();
+  });
+
+  document.querySelector('.workspace').addEventListener('click', (event) => {
+    const { flow: nextFlow, simulate } = event.target.dataset;
+    if (nextFlow) {
+      flow = nextFlow;
+      document.querySelectorAll('[data-flow]').forEach((control) => {
+        control.setAttribute('aria-pressed', String(control.dataset.flow === flow));
+      });
+      if (phase === 'review') phase = 'setup';
+      if (resumePhase === 'review') resumePhase = 'setup';
+    } else if (simulate === 'expire') {
+      resumePhase = phase;
+      phase = 'expired';
+    } else if (simulate === 'failure') {
+      failNext = !failNext;
+    } else if (simulate === 'reply') {
+      shownReplies = true;
+      after.push({ who: 'mod', text: reply });
+    } else if (simulate === 'reset') {
+      reset();
+      return;
+    } else {
+      return;
+    }
+    changed(simulate === 'expire');
+  });
+
+  get('scenario').addEventListener('change', (event) => {
+    scenario = event.target.value;
+    reset();
+  });
+
+  get('client-language').addEventListener('change', (event) => {
+    locale = event.target.value;
+    render();
+  });
+
+  reset();
+</script>
+</body>
+</html>

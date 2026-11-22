@@ -42,9 +42,11 @@ class Owner(commands.Cog):
     @commands.command()
     async def db(self, ctx):
         """Shows me my DB"""
+        reports = {user_id: report for user_id, report in self.bot.db['reports'].items()
+                   if not report.get('anonymous_reporter')}
         t = f"__prefix__: ``{self.bot.db['prefix']}``\n" \
             f"__settingup__: ``{self.bot.db['settingup']}``\n" + \
-            f"__reports__: ```{self.bot.db['reports']}```\n".replace("}, ", "},\n") + \
+            f"__reports__: ```{reports}```\n".replace("}, ", "},\n") + \
             f"__guilds__:\n"
         guild_text = ""
         for guild in self.bot.db['guilds']:

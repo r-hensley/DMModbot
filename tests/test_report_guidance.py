@@ -40,17 +40,17 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         self.thread.guild.id = 345678901234567890
         self.thread.send = AsyncMock()
         self.guild = self.thread.guild
-        self.bot = types.SimpleNamespace(db={'reports': {}}, pending_report_kind={})
+        self.bot = types.SimpleNamespace(db={'reports': {}})
         self.cog = modbot_module.Modbot(self.bot)
         self.saved_json = None
         async def save():
             self.saved_json = json.dumps(self.bot.db)
         hf.dump_json = AsyncMock(side_effect=save)
-        async def add_report(author, thread, room_type):
+        async def add_report(author, thread, room_type, *, report_kind, **kwargs):
             self.bot.db['reports'][author.id] = {
                 'user_id': author.id, 'thread_id': thread.id,
                 'guild_id': thread.guild.id, 'report_room_type': room_type,
-                'mods': [], 'not_anonymous': False,
+                'mods': [], 'not_anonymous': False, 'report_kind': report_kind,
             }
             await hf.dump_json()
         hf.add_report_to_db = AsyncMock(side_effect=add_report)
@@ -59,18 +59,17 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         hf.deny_new_user_role_request = AsyncMock()
         hf.create_report_thread = AsyncMock(return_value=self.thread)
         hf.repost_rai_modlog = AsyncMock()
-        hf.deliver_first_report_msg_to_thread = AsyncMock()
-        hf.notify_user_of_report_connection = AsyncMock()
+        hf.deliver_report_draft = AsyncMock()
+        hf.forward_report_media = AsyncMock()
+        hf.reporter_label = lambda author, _anonymous: author.mention
         hf.try_add_reaction = AsyncMock()
         hf.check_if_valid_msg = AsyncMock(return_value=True)
 
     async def open_and_restart(self, report_kind):
-        if report_kind is not None:
-            self.bot.pending_report_kind[self.user_id] = report_kind
-        with patch.object(modbot_module.asyncio, 'sleep', new=AsyncMock()):
-            await self.cog.start_report_room(
-                self.user, self.guild, Mock(content='My initial report message'), 'main',
-            )
+        await self.cog.start_report_room(
+            self.user, self.guild, [Mock(content='My initial report message')], 'My initial report message', 'main',
+            report_kind=report_kind,
+        )
         reloaded_db = db_module.str_keys_to_int_keys(json.loads(self.saved_json))
         self.assertEqual(reloaded_db['reports'][self.user_id].get('report_kind'), report_kind)
         self.bot.db = reloaded_db

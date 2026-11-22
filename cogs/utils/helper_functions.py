@@ -242,26 +242,41 @@ async def forward_ban_appeal_msg_to_dm(dm_channel: discord.DMChannel, appeal_tex
         await dm_channel.send(f"{section_prefix}{section}")
 
 
-async def deliver_first_report_msg_to_thread(
-        report_thread: discord.Thread,
-        author: discord.User,
-        msg: Optional[discord.Message] = None):
-    """This will deliver the first message of a report to the report thread from the user,
-    and then in the DM channel, add a reaction to the message to indicate that it has been delivered."""
-    if not msg:
-        await report_thread.send("NOTE: The user has not sent a message yet.")
-        return
-    section_prefix = f">>> {author.mention}: "
-    partitioned_text = partition_text(msg.content, 2000 - len(section_prefix))
-    for section in partitioned_text:
-        await report_thread.send(f"{section_prefix}{section}")
-    await try_add_reaction(msg, "📨")
-    await try_add_reaction(msg, "✅")
-    if msg.attachments:
-        for attachment in msg.attachments:
-            await report_thread.send(f">>> {attachment.url}")
-    if msg.embeds:
-        await report_thread.send(embed=msg.embeds[0])
+def reporter_label(author, anonymous):
+    return "Anonymous reporter" if anonymous else author.mention
+
+
+async def forward_report_media(destination, msg, *, anonymous=False):
+    if msg.embeds and not anonymous:
+        await destination.send(embeds=msg.embeds)
+    for attachment in msg.attachments:
+        try:
+            file = await attachment.to_file()
+        except discord.HTTPException:
+            if anonymous:
+                raise
+            await destination.send(attachment.url)
+        else:
+            await destination.send(file=file)
+    for sticker in msg.stickers:
+        try:
+            await destination.send(stickers=[sticker])
+        except (discord.HTTPException, discord.Forbidden):
+            await destination.send(str(getattr(sticker, 'url', sticker)))
+
+
+async def deliver_report_draft(report_thread, author, messages, draft, *, anonymous=False):
+    prefix = f">>> {reporter_label(author, anonymous)}: "
+    for part in partition_text(draft, 2000 - len(prefix)):
+        if anonymous:
+            await report_thread.send(prefix + part, allowed_mentions=discord.AllowedMentions.none(),
+                                     suppress_embeds=True)
+        else:
+            await report_thread.send(prefix + part)
+    for msg in messages:
+        await forward_report_media(report_thread, msg, anonymous=anonymous)
+    for msg in messages:
+        await try_add_reaction(msg, "📨")
 
 
 async def notify_user_of_ban_appeal_connection(author: discord.User):
@@ -305,45 +320,8 @@ async def notify_user_of_ban_appeal_connection(author: discord.User):
                                           color=0x00FF00))
 
 
-async def notify_user_of_report_connection(author: discord.User):
-    locale: str = get_user_locale(author.id)
-    desc = {
-        "en": "You are now connected to the moderators of the server, and I've sent your first message. "
-              "The moderators will see any messages or images you send, and you'll receive messages and images from the mods too. "
-              "It may take a while for the moderators to see your appeal, so please be patient.\n\n"
-              "When you are done talking to the mods, please type `end` or `close`, and then the chat will close.",
-        
-        "es": "Ahora estás conectado con los moderadores del servidor, y les he enviado tu primer mensaje. "
-              "Los moderadores verán los mensajes o imágenes que envíes, y también recibirás mensajes e imágenes de los moderadores. "
-              "Los moderadores pueden tardar un poco en ver tu reporte, así que ten paciencia.\n\n"
-              "Cuando hayas terminado de hablar con los moderadores, escribe `end` o `close` y el chat se cerrará.",
-        
-        "ja": "サーバーの管理者に接続しました。またあなたが最初に送信したメッセージも管理者に送られています。"
-              "ここで送信されたメッセージや画像は管理者に送られ、管理者からのメッセージもここに届きます。"
-              "お返事に時間がかかる場合がございますので、ご了承ください。\n\n"
-              "管理者への通報が終了したら、`end`または`close`とタイプしてください。",
-        
-        "fr": "Tu es maintenant connecté aux modérateurs du serveur, et j’ai envoyé ton premier message. "
-              "Les modérateurs verront tous les messages ou images que tu envoies, et tu recevras également leurs réponses. "
-              "Il se peut que les modérateurs mettent un certain temps à voir ton message, merci de ta patience.\n\n"
-              "Quand tu auras fini de parler aux modérateurs, tape `end` ou `close` et la conversation sera fermée.",
-        
-        "ar": "أنت الآن متصل بمشرفي الخادم، وقد أرسلت رسالتك الأولى لهم. "
-              "سيرى المشرفون أي رسائل أو صور ترسلها، وستتلقى أيضًا رسائل وصورًا من المشرفين. "
-              "قد يستغرق الأمر بعض الوقت حتى يطلع المشرفون على بلاغك، لذا يرجى التحلي بالصبر.\n\n"
-              "عندما تنتهي من التحدث مع المشرفين، اكتب `end` أو `close` وسيتم إغلاق الدردشة.",
-        
-        "zh": "你现在已连接到服务器的管理员，我已经将你的第一条消息发送给他们。"
-              "管理员会看到你发送的任何消息或图片，你也会收到来自管理员的回复。"
-              "管理员可能需要一些时间才能看到你的申诉，请耐心等待。\n\n"
-              "当你结束与管理员的对话时，请输入 `end` 或 `close`，然后聊天将关闭。"
-    }
-    
-    await author.send(embed=discord.Embed(description=desc.get(locale, desc['en']),
-                                          color=0x00FF00))
-
-
-async def add_report_to_db(author: discord.User, report_thread: discord.Thread, report_room_type: str = "main"):
+async def add_report_to_db(author: discord.User, report_thread: discord.Thread, report_room_type: str = "main",
+                           *, report_kind=None, anonymous=False, dm_card_id=None):
     here.bot.db['reports'][author.id] = {
         "user_id": author.id,
         "thread_id": report_thread.id,
@@ -351,8 +329,12 @@ async def add_report_to_db(author: discord.User, report_thread: discord.Thread, 
         "report_room_type": report_room_type,
         "mods": [],
         "not_anonymous": False,
+        "anonymous_reporter": anonymous,
+        "dm_card_id": dm_card_id,
         "permanent_non_anonymous_notified_mods": [],
     }
+    if report_kind is not None:
+        here.bot.db['reports'][author.id]['report_kind'] = report_kind
     await dump_json()
 
 
@@ -543,7 +525,7 @@ def build_report_short_description(author: discord.User, title: str, is_staff_te
     
     return entry_text
 
-def build_report_thread_header(author: discord.User, guild_id: int):
+def build_report_thread_header(author: discord.User, guild_id: int, *, anonymous=False):
     thread_text = rf"""
             I'll relay any of their messages to this 
             channel. 
@@ -562,12 +544,13 @@ def build_report_thread_header(author: discord.User, guild_id: int):
                     `{'`   `'.join(EXEMPTED_BOT_PREFIXES)}`
             """
     thread_text = dedent(thread_text)
-    thread_text = add_recent_report_info(thread_text, author.id, guild_id)
+    if not anonymous:
+        thread_text = add_recent_report_info(thread_text, author.id, guild_id)
     return thread_text
 
 async def create_report_thread(author: discord.User, report_text: str,
                                report_channel: Union[discord.TextChannel, discord.ForumChannel],
-                               ban_appeal: bool = False, voice_report: bool = False):
+                               ban_appeal: bool = False, voice_report: bool = False, *, anonymous=False):
 
     if len(report_text) > 150:
         report_title = f"**{report_text[:150]}** [・・・]\n"
@@ -576,9 +559,16 @@ async def create_report_thread(author: discord.User, report_text: str,
 
     member = report_channel.guild.get_member(author.id)
     is_staff_testing = member and report_channel.permissions_for(member).read_messages  # someone from staff is testing modbot
-    entry_text = build_report_short_description(author, report_title, is_staff_testing, ban_appeal)
-    thread_text = build_report_thread_header(author, report_channel.guild.id)
-    thread_name = f'{author.name} ({datetime.now().strftime("%Y-%m-%d")})'
+    if anonymous:
+        entry_text = "An anonymous reporter opened a report. Reply in the thread to continue."
+        if not is_staff_testing:
+            entry_text += " (@here)"
+        name = "Anonymous report"
+    else:
+        entry_text = build_report_short_description(author, report_title, is_staff_testing, ban_appeal)
+        name = author.name
+    thread_text = build_report_thread_header(author, report_channel.guild.id, anonymous=anonymous)
+    thread_name = f'{name} ({datetime.now().strftime("%Y-%m-%d")})'
 
     if isinstance(report_channel, discord.ForumChannel):
         tags = ["❗"]
@@ -644,8 +634,8 @@ async def close_thread(thread: discord.Thread, finish=False):
         await thread.edit(archived=True)
 
 
-async def deny_new_user_role_request(guild: discord.Guild, author: discord.User, msg: discord.Message,
-                                       meta_channel: discord.Thread):
+async def deny_new_user_role_request(guild: discord.Guild, author: discord.User, draft: str,
+                                     meta_channel: discord.Thread, *, anonymous=False):
     # #### SPECIAL STUFF FOR JP SERVER ####
     # Turn away new users asking for a role
     if guild.id == JP_SERV_ID:
@@ -658,10 +648,11 @@ async def deny_new_user_role_request(guild: discord.Guild, author: discord.User,
                               f"ボイスチャットかこのボットを使うにはいずれかの言語ロールが必要です。 "
                               f"{jho.mention} にて母語を教えて下さい。")
             text = f"{str(author.mention)} came to me with the following message:" \
-                   f"```{msg.content}```" \
+                   f"```{draft}```" \
                    f"I assumed they were asking for language tag, so I told them to state their " \
                    f"native language in JHO and blocked their request to open the report room."
-            await meta_channel.send(embed=discord.Embed(description=text, color=0xFF0000))
+            if not anonymous:
+                await meta_channel.send(embed=discord.Embed(description=text, color=0xFF0000))
             raise EndEarly
 
     # #### SPECIAL STUFF FOR SP SERVER ####
@@ -681,10 +672,11 @@ async def deny_new_user_role_request(guild: discord.Guild, author: discord.User,
             await member.send(f"To access the server, please read {getting_started.mention}.\n"
                               f"Para acceder al servidor, por favor, lee {getting_started.mention}.")
             text = f"{str(author.mention)} came to me with the following message:" \
-                   f"```{msg.content}```" \
+                   f"```{draft}```" \
                    f"I assumed they were asking how to access the server, so I told them to get a native " \
                    f"language in the newcomers channels and blocked their request to open the report room."
-            await meta_channel.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
+            if not anonymous:
+                await meta_channel.send(author.mention, embed=discord.Embed(description=text, color=0xFF0000))
             raise EndEarly
 
 
@@ -734,12 +726,12 @@ async def get_report_variables(guild, report_room_type, author):
     return report_channel, meta_channel
 
 
-async def check_bot_perms(report_channel, meta_channel, guild, author):
+async def check_bot_perms(report_channel, meta_channel, guild, author, *, anonymous=False):
     """Check if the bot has the permissions to send messages in the report channel and create threads."""
     perms = report_channel.permissions_for(guild.me)
     if not perms.send_messages or not perms.create_public_threads:
         try:
-            await meta_channel.send(f"WARNING: {author.mention} tried to join the report room, but in order "
+            await meta_channel.send(f"WARNING: {reporter_label(author, anonymous)} tried to join the report room, but in order "
                                     f"to open a report here, I need the `Create Public Threads` permission "
                                     f"in this channel. Please give me that permission and tell the user "
                                     f"to try again.")
@@ -779,114 +771,6 @@ async def check_if_valid_msg(msg):
         return False
 
     return True
-
-
-async def setup_confirm_guild_buttons(guild: discord.Guild, author: discord.User):
-    txt = (f"Hello, you are trying to start a support ticket/report with "
-           f"the mods of {guild.name}.\n\n"
-           "**Please push one of the below buttons.**")
-    view = utils.RaiView(timeout=180)
-    report_str = {
-        'en': "I want to report a user",
-        'es': "Quiero reportar a un usuario",
-        'ja': "他のユーザーを通報したい",
-        'fr': "Je veux signaler un utilisateur",
-        'ar': "أريد الإبلاغ عن مستخدم",
-        'zh': "我要举报一个用户"
-    }
-    
-    account_q_str = {
-        'en': "I have a question about my account",
-        'es': "Tengo una pregunta sobre mi cuenta",
-        'ja': "自分のアカウントについて質問がある",
-        'fr': "J'ai une question concernant mon compte",
-        'ar': "لدي سؤال حول حسابي",
-        'zh': "我有一个关于我账户的问题"
-    }
-    
-    server_q_str = {
-        'en': "I have a question about the server",
-        'es': "Tengo una pregunta sobre el servidor",
-        'ja': "サーバーについて質問がある",
-        'fr': "J'ai une question concernant le serveur",
-        'ar': "لدي سؤال حول الخادم",
-        'zh': "我有一个关于服务器的问题"
-    }
-    
-    cancel_str = {
-        'en': "Nevermind, cancel this menu.",
-        'es': "Olvídalo, cancela este menú",
-        'ja': "なんでもない、このメニューを閉じてください",
-        'fr': "Laisse tomber, annule ce menu.",
-        'ar': "لا بأس، ألغِ هذه القائمة",
-        'zh': "算了，取消这个菜单"
-    }
-    
-    user_locale = get_user_locale(author.id)
-    report_button = discord.ui.Button(label=report_str.get(user_locale) or report_str['en'],
-                                      style=discord.ButtonStyle.primary, row=1)
-    account_q_button = discord.ui.Button(label=account_q_str.get(user_locale) or account_q_str['en'],
-                                         style=discord.ButtonStyle.primary, row=2)
-    server_q_button = discord.ui.Button(label=server_q_str.get(user_locale) or server_q_str['en'],
-                                        style=discord.ButtonStyle.secondary, row=3)
-    cancel_button = discord.ui.Button(label=cancel_str.get(user_locale) or cancel_str['en'],
-                                      style=discord.ButtonStyle.red, row=4)
-
-    if not author.dm_channel:
-        try:
-            await author.create_dm()
-        except discord.Forbidden:
-            return None, None
-    q_msg = await author.dm_channel.send(txt)
-
-    # delete original message if user pushes a button
-    async def button_callback1(button_interaction: discord.Interaction):
-        locale = button_interaction.locale
-        here.bot.db['user_localizations'][author.id] = str(locale)
-        await q_msg.delete()
-        first_msg_conf = {
-            "en": "I will try to send your first message. "
-                  "Make sure all the messages you send receive a '📨' reaction.",
-            "es": "Intentaré enviar tu primer mensaje. "
-                  "Asegúrate de que todos los mensajes que envíes reciban una reacción '📨'.",
-            "ja": "あなたの最初のメッセージを送信してみます。"
-                  "送信するすべてのメッセージが '📨' のリアクションが付くことを確認してください。",
-            "fr": "Je vais essayer d'envoyer ton premier message. "
-                  "Assure-toi que tous les messages que tu envoies reçoivent une réaction '📨'.",
-            "ar": "سأحاول إرسال رسالتك الأولى. "
-                  "تأكد من أن جميع الرسائل التي ترسلها تتلقى رد فعل '📨'.",
-            "zh": "我会尝试发送你的第一条消息。"
-                  "请确保你发送的所有消息都收到一个 '📨' 的反应。"
-        }
-        
-        conf_txt = first_msg_conf.get(str(locale)[:2], first_msg_conf['en'])
-        await button_interaction.response.send_message(conf_txt, ephemeral=True)
-
-    async def button_callback2(button_interaction: discord.Interaction):
-        here.bot.db['user_localizations'][author.id] = str(button_interaction.locale)
-        await q_msg.delete()
-        await button_interaction.response.send_message("Canceling report",
-                                                       ephemeral=True)
-
-    report_button.callback = account_q_button.callback = server_q_button.callback = button_callback1
-    cancel_button.callback = button_callback2
-    view.add_item(report_button)
-    view.add_item(account_q_button)
-    view.add_item(server_q_button)
-    view.add_item(cancel_button)
-
-    async def on_timeout():
-        try:
-            await q_msg.edit(content="I did not receive a response from you. Please try to send your "
-                                     "message again", view=None)
-        except discord.NotFound:
-            pass
-
-    view.on_timeout = on_timeout
-
-    await q_msg.edit(view=view)  # add view to message
-
-    return report_button, account_q_button, server_q_button, cancel_button
 
 
 def get_user_locale(user_id: int) -> str:

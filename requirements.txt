@@ -5,7 +5,7 @@ async-timeout
 attrs
 chardet
 charset-normalizer
-discord.py
+discord.py>=2.6
 frozenlist
 idna
 multidict

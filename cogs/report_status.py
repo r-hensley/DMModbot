@@ -204,7 +204,7 @@ class ReportStatus(commands.Cog):
         stats_entries: list[ThreadStats] = []
         for report in sorted(active_reports, key=lambda item: item.get("thread_id", 0)):
             entry = await self.collect_thread_stats(guild, report)
-            if entry.thread is None or entry.user is None:
+            if entry.thread is None or (entry.user is None and not report.get('anonymous_reporter')):
                 continue
             stats_entries.append(entry)
 
@@ -240,12 +240,14 @@ class ReportStatus(commands.Cog):
 
     async def collect_thread_stats(self, guild: discord.Guild, report: dict) -> ThreadStats:
         thread = self.bot.get_channel(report["thread_id"])
-        user = self.bot.get_user(report["user_id"])
-        if not user:
-            try:
-                user = await self.bot.fetch_user(report["user_id"])
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                user = None
+        user = None
+        if not report.get("anonymous_reporter"):
+            user = self.bot.get_user(report["user_id"])
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(report["user_id"])
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
 
         stats = ThreadStats(thread=thread, thread_info=report, user=user)
         if not isinstance(thread, discord.Thread):
@@ -283,7 +285,8 @@ class ReportStatus(commands.Cog):
         else:
             mention = entry.thread.mention
 
-        user_label = f"<@{entry.thread_info['user_id']}>"
+        user_label = ("Anonymous reporter" if entry.thread_info.get("anonymous_reporter")
+                      else f"<@{entry.thread_info['user_id']}>")
         age_text = self.format_relative_time(entry.last_message_at)
         status_bits = []
         status_icon = "✅" if self.was_last_message_responded_to(entry) else "⏳"
