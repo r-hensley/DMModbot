@@ -59,9 +59,8 @@ class EndEarly(Exception):
     pass
 
 
-def _dump_json_sync():
+def _dump_json_sync(db_copy):
     dir_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-    db_copy = deepcopy(here.bot.db)
     if os.path.exists(f'{dir_path}/modbot_3.json'):
         shutil.copy(f'{dir_path}/modbot_3.json', f'{dir_path}/modbot_4.json')
     if os.path.exists(f'{dir_path}/modbot_2.json'):
@@ -70,12 +69,22 @@ def _dump_json_sync():
         shutil.copy(f'{dir_path}/modbot.json', f'{dir_path}/modbot_2.json')
     with open(f'{dir_path}/modbot_temp.json', 'w') as write_file:
         json.dump(db_copy, write_file, indent=4)
-    shutil.copy(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')
+    os.replace(f'{dir_path}/modbot_temp.json', f'{dir_path}/modbot.json')
 
 
 async def dump_json():
-    async with here.dump_json_lock:
-        await asyncio.to_thread(_dump_json_sync)
+    lock = here.dump_json_lock
+    await lock.acquire()
+    try:
+        db_copy = deepcopy(here.bot.db)
+        write = asyncio.get_running_loop().run_in_executor(None, _dump_json_sync, db_copy)
+    except BaseException:
+        lock.release()
+        raise
+
+    # Cancelling an autosave does not stop a write already running in a thread.
+    write.add_done_callback(lambda _: lock.release())
+    await asyncio.shield(write)
 
 
 async def ensure_forum_meta_thread(forum_channel: discord.ForumChannel) -> Optional[discord.Thread]:

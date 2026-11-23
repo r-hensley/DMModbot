@@ -91,6 +91,7 @@ class Modbot(Bot):
         self.log_channel = None
         self.error_channel = None
         self.control = None
+        self._shutdown_task = None
 
     async def setup_hook(self):
         for extension in EXTENSIONS.values():
@@ -122,11 +123,27 @@ class Modbot(Bot):
         hf.setup(bot=self, loop=asyncio.get_running_loop())
 
     async def close(self):
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(self._shutdown())
+        await asyncio.shield(self._shutdown_task)
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        # discord.py's context manager only waits for its own close task.
+        await self.close()
+
+    async def _shutdown(self):
         try:
-            if self.control is not None:
-                await self.control.close()
+            try:
+                if self.control is not None:
+                    await self.control.close()
+            finally:
+                await super().close()  # Unloading the cogs cancels their periodic writers.
         finally:
-            await super().close()
+            if hf.bot is self and hf.dump_json_lock is not None:
+                try:
+                    await hf.dump_json()
+                except Exception:
+                    logger.exception("Could not save modbot.json during shutdown")
 
 
 def run_bot():
