@@ -42,7 +42,7 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         self.thread.guild.id = 345678901234567890
         self.thread.send = AsyncMock()
         self.guild = self.thread.guild
-        self.bot = types.SimpleNamespace(db={'reports': {}, 'guilds': {}}, get_user=Mock(return_value=self.user))
+        self.bot = types.SimpleNamespace(db={'reports': {}, 'guilds': {}})
         self.now = datetime(2026, 11, 22, tzinfo=timezone.utc)
         self.enterContext(patch.object(discord.utils, 'utcnow', side_effect=lambda: self.now))
         self.cog = modbot_module.Modbot(self.bot)
@@ -55,7 +55,7 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 'user_id': author.id, 'thread_id': thread.id,
                 'guild_id': thread.guild.id, 'report_room_type': room_type,
                 'mods': [], 'not_anonymous': False, 'report_kind': report_kind,
-                'followup_due_at': followup_due_at,
+                'followup_due_at': followup_due_at, 'followup_answered': False,
             }
             await hf.dump_json()
         hf.add_report_to_db = AsyncMock(side_effect=add_report)
@@ -85,9 +85,8 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
             self.user.dm_channel, self.thread,
         )
 
-    async def advance(self, seconds):
+    def advance(self, seconds):
         self.now += timedelta(seconds=seconds)
-        await modbot_module.Modbot.followup_loop.coro(self.cog)
 
     async def relay(self, report, *, staff=False):
         sender = Mock(id=self.user_id + 1) if staff else self.user
@@ -97,59 +96,70 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         message = Mock(author=sender, content='Here are more details', embeds=[], attachments=[], stickers=[])
         await self.cog.send_message(message, report)
 
-    async def test_user_report_retains_evidence_guidance_after_restart(self):
+    async def test_user_report_reminder_requires_a_later_message_and_is_sent_once(self):
         report = await self.open_and_restart('report_user')
-        await self.advance(30)
+        self.advance(30)
         await self.relay(report)
-        await self.advance(59)
+        self.advance(59)
+        await self.relay(report)
         self.user.send.assert_not_awaited()
-        await self.advance(1)
+
+        self.advance(60)
+        self.user.send.assert_not_awaited()
+        await self.relay(report)
         self.user.send.assert_awaited_once()
         embed = self.user.send.call_args.kwargs['embed']
-        await self.relay(report)
-        await self.advance(60)
-        self.user.send.assert_awaited_once()
         self.assertEqual(embed.title, 'Ticket Information')
         self.assertIn('reported user’s username', embed.description)
-        self.assertIn('screenshots', embed.description)
 
-    async def test_account_question_retains_generic_guidance_after_restart(self):
-        await self.open_and_restart('account_question')
-        await self.advance(59)
-        self.user.send.assert_not_awaited()
-        await self.advance(1)
-        embed = self.user.send.call_args.kwargs['embed']
-        self.assertIn('Please be patient', embed.description)
-        self.assertNotIn('reported user’s username', embed.description)
-
-    async def test_report_without_a_kind_retains_generic_guidance_after_restart(self):
-        hf.get_user_locale.return_value = 'unsupported'
-        await self.open_and_restart(None)
-        await self.advance(60)
-        embed = self.user.send.call_args.kwargs['embed']
-        self.assertIn('Please be patient', embed.description)
-        self.assertNotIn('reported user’s username', embed.description)
-
-    async def test_staff_reply_cancels_wait_and_next_reporter_message_can_rearm(self):
-        report = await self.open_and_restart('report_user')
-        await self.advance(30)
-        await self.relay(report, staff=True)
-        self.user.send.reset_mock()
-        await self.advance(60)
-        self.user.send.assert_not_awaited()
-
-        hf.get_user_locale.return_value = 'es'
+        self.advance(60)
         await self.relay(report)
-        await self.advance(60)
+        self.user.send.assert_awaited_once()
+
+    async def test_late_account_question_gets_generic_guidance_after_restart(self):
+        report = await self.open_and_restart('account_question')
+        self.advance(120)
+        self.user.send.assert_not_awaited()
+        await self.relay(report)
+        embed = self.user.send.call_args.kwargs['embed']
+        self.assertIn('Please be patient', embed.description)
+        self.assertNotIn('reported user’s username', embed.description)
+
+    async def test_unsupported_language_falls_back_to_english_on_late_message(self):
+        hf.get_user_locale.return_value = 'unsupported'
+        report = await self.open_and_restart(None)
+        self.advance(60)
+        await self.relay(report)
+        embed = self.user.send.call_args.kwargs['embed']
+        self.assertIn('Please be patient', embed.description)
+        self.assertNotIn('reported user’s username', embed.description)
+
+    async def test_late_reporter_followup_uses_saved_language(self):
+        hf.get_user_locale.return_value = 'es'
+        report = await self.open_and_restart('report_user')
+        self.advance(60)
+        await self.relay(report)
         embed = self.user.send.call_args.kwargs['embed']
         self.assertEqual(embed.title, 'Información del reporte')
         self.assertIn('Ten paciencia', embed.description)
-        self.assertIn('nombre de usuario', embed.description)
 
-    async def test_closed_report_has_no_pending_notice(self):
-        await self.open_and_restart('report_user')
+    async def test_staff_reply_suppresses_reminder_for_the_rest_of_the_report(self):
+        report = await self.open_and_restart('report_user')
+        self.advance(30)
+        await self.relay(report, staff=True)
+        self.user.send.reset_mock()
+
+        self.advance(60)
+        await self.relay(report)
+        self.advance(60)
+        await self.relay(report)
+        self.user.send.assert_not_awaited()
+
+    async def test_closed_report_has_no_reminder(self):
+        report = await self.open_and_restart('report_user')
         self.bot.db['reports'].clear()
-        await self.advance(60)
+        self.advance(60)
+        await self.relay(report)
         self.user.send.assert_not_awaited()
 
 

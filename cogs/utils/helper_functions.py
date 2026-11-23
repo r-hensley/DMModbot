@@ -337,6 +337,7 @@ async def add_report_to_db(author: discord.User, report_thread: discord.Thread, 
         here.bot.db['reports'][author.id]['report_kind'] = report_kind
     if followup_due_at is not None:
         here.bot.db['reports'][author.id]['followup_due_at'] = followup_due_at
+        here.bot.db['reports'][author.id]['followup_answered'] = False
     await dump_json()
 
 

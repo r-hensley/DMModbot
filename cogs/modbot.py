@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 from .report_intake import CloseReportView, ReportIntake, card_copy, status_card, trace_flow, trace_flow_error
 from .utils.db_utils import get_thread_id_to_thread_info
@@ -88,11 +88,9 @@ class Modbot(commands.Cog):
     async def cog_load(self):
         self.close_view = CloseReportView(self)
         self.bot.add_view(self.close_view)
-        self.followup_loop.start()
         trace_flow("cog_loaded")
 
     def cog_unload(self):
-        self.followup_loop.cancel()
         self.close_view.stop()
         for intake in self.intakes.values():
             intake.view.stop()
@@ -442,17 +440,21 @@ class Modbot(commands.Cog):
                 trace_flow("relay_consumed", direction=direction)
             return
 
-        # Record activity before the network calls so a due notice sees the newer message.
         from_reporter = isinstance(open_report.source, discord.DMChannel)
-        previous_due = thread_info.get('followup_due_at')
         followup_changed = False
-        if not thread_info.get('sent_followup_notice') or 'followup_due_at' in thread_info:
-            if from_reporter:
-                thread_info['followup_due_at'] = discord.utils.utcnow().timestamp() + FOLLOWUP_DELAY
+        followup_ready = False
+        if from_reporter:
+            if (not thread_info.get('sent_followup_notice')
+                    and not thread_info.get('followup_answered', bool(thread_info['mods']))):
+                now = discord.utils.utcnow().timestamp()
+                previous_due = thread_info.get('followup_due_at')
+                followup_ready = previous_due is not None and now >= previous_due
+                thread_info['followup_due_at'] = now + FOLLOWUP_DELAY
                 followup_changed = True
-            elif previous_due is not None:
-                thread_info['followup_due_at'] = None
-                followup_changed = True
+        elif not thread_info.get('followup_answered'):
+            thread_info['followup_answered'] = True
+            thread_info.pop('followup_due_at', None)
+            followup_changed = True
 
         try:
             anonymous = open_report.dest == open_report.thread and thread_info.get('anonymous_reporter', False)
@@ -483,65 +485,41 @@ class Modbot(commands.Cog):
                 trace_flow("relay_delivered", direction=direction)
             await hf.try_add_reaction(msg, "📨")
 
-            if followup_changed:
+            if followup_ready:
+                await self.send_followup_notice(open_report)
+            elif followup_changed:
                 await hf.dump_json()
 
-    @tasks.loop(seconds=5)
-    async def followup_loop(self):
-        now = discord.utils.utcnow().timestamp()
-        for user_id, report in list(self.bot.db['reports'].items()):
-            due = report.get('followup_due_at')
-            if due is None or due > now or report.get('sent_followup_notice'):
-                continue
-            try:
-                await self.send_due_followup(user_id, report, due)
-            except (discord.HTTPException, OSError) as error:
-                trace_flow_error("followup_error", error)
-                logger.warning("Could not process a report follow-up (%s)", type(error).__name__)
+    async def send_followup_notice(self, open_report):
+        user_id = open_report.user.id
+        report = open_report.thread_info
 
-    @followup_loop.before_loop
-    async def before_followup_loop(self):
-        await self.bot.wait_until_ready()
-
-    async def send_due_followup(self, user_id, report, due):
         def still_waiting():
             return (self.bot.db['reports'].get(user_id) is report
                     and report['thread_id'] not in self.closing_reports
-                    and report.get('followup_due_at') == due)
+                    and not report.get('followup_answered', bool(report['mods'])))
 
-        if not still_waiting():
-            return
-        try:
-            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-        except (discord.NotFound, discord.Forbidden):
-            if still_waiting():
-                report.pop('followup_due_at', None)
-                await hf.dump_json()
-            return
         if not still_waiting() or report.get('sent_followup_notice'):
             return
-
-        # Save the once-per-report flag before sending to avoid repeats after a restart.
+        # Persist before sending so the same report cannot receive a second reminder.
         report['sent_followup_notice'] = True
-        try:
-            await hf.dump_json()
-        except OSError:
-            report.pop('sent_followup_notice', None)
-            raise
+        report.pop('followup_due_at', None)
+        await hf.dump_json()
         if not still_waiting():
-            if self.bot.db['reports'].get(user_id) is report:
-                report.pop('sent_followup_notice', None)
-                await hf.dump_json()
             return
 
-        report.pop('followup_due_at', None)
         copy = card_copy(hf.get_user_locale(user_id))
         description = copy['followup_wait']
         if report.get('report_kind') == 'report_user':
             description += "\n\n" + copy['followup_evidence']
-        await user.send(embed=discord.Embed(title=copy['followup_title'], description=description,
-                                            color=discord.Color.blurple()))
-        trace_flow("followup_sent")
+        try:
+            await open_report.source.send(embed=discord.Embed(
+                title=copy['followup_title'], description=description, color=discord.Color.blurple(),
+            ))
+        except discord.HTTPException as error:
+            trace_flow_error("followup_error", error)
+        else:
+            trace_flow("followup_sent")
 
     async def process_msg_content(self, msg, open_report):
         thread_info = open_report.thread_info
