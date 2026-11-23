@@ -1,4 +1,5 @@
 """Report-specific guidance must survive saving and restarting the bot."""
+from datetime import datetime, timedelta, timezone
 import importlib
 import json
 import sys
@@ -34,23 +35,27 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         self.user.bot = False
         self.user.dm_channel = Mock(spec=discord.DMChannel)
         self.user.dm_channel.send = AsyncMock()
+        self.user.send = self.user.dm_channel.send
         self.user.dm_channel.typing = AsyncMock()
         self.thread = Mock(spec=discord.Thread)
         self.thread.id = self.thread_id
         self.thread.guild.id = 345678901234567890
         self.thread.send = AsyncMock()
         self.guild = self.thread.guild
-        self.bot = types.SimpleNamespace(db={'reports': {}})
+        self.bot = types.SimpleNamespace(db={'reports': {}, 'guilds': {}}, get_user=Mock(return_value=self.user))
+        self.now = datetime(2026, 11, 22, tzinfo=timezone.utc)
+        self.enterContext(patch.object(discord.utils, 'utcnow', side_effect=lambda: self.now))
         self.cog = modbot_module.Modbot(self.bot)
         self.saved_json = None
         async def save():
             self.saved_json = json.dumps(self.bot.db)
         hf.dump_json = AsyncMock(side_effect=save)
-        async def add_report(author, thread, room_type, *, report_kind, **kwargs):
+        async def add_report(author, thread, room_type, *, report_kind, followup_due_at, **kwargs):
             self.bot.db['reports'][author.id] = {
                 'user_id': author.id, 'thread_id': thread.id,
                 'guild_id': thread.guild.id, 'report_room_type': room_type,
                 'mods': [], 'not_anonymous': False, 'report_kind': report_kind,
+                'followup_due_at': followup_due_at,
             }
             await hf.dump_json()
         hf.add_report_to_db = AsyncMock(side_effect=add_report)
@@ -64,6 +69,7 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         hf.reporter_label = lambda author, _anonymous: author.mention
         hf.try_add_reaction = AsyncMock()
         hf.check_if_valid_msg = AsyncMock(return_value=True)
+        hf.get_user_locale = Mock(return_value='en')
 
     async def open_and_restart(self, report_kind):
         await self.cog.start_report_room(
@@ -74,31 +80,77 @@ class ReportGuidanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reloaded_db['reports'][self.user_id].get('report_kind'), report_kind)
         self.bot.db = reloaded_db
         self.cog = modbot_module.Modbot(self.bot)
-        report = modbot_module.OpenReport(
+        return modbot_module.OpenReport(
             reloaded_db['reports'][self.user_id], self.user, self.thread,
             self.user.dm_channel, self.thread,
         )
-        message = Mock(author=self.user, content='Here are more details',
-                       embeds=[], attachments=[], stickers=[])
+
+    async def advance(self, seconds):
+        self.now += timedelta(seconds=seconds)
+        await modbot_module.Modbot.followup_loop.coro(self.cog)
+
+    async def relay(self, report, *, staff=False):
+        sender = Mock(id=self.user_id + 1) if staff else self.user
+        if staff:
+            report = modbot_module.OpenReport(report.thread_info, self.user, self.thread,
+                                              self.thread, self.user.dm_channel)
+        message = Mock(author=sender, content='Here are more details', embeds=[], attachments=[], stickers=[])
         await self.cog.send_message(message, report)
-        self.user.dm_channel.send.assert_awaited_once()
-        return self.user.dm_channel.send.call_args.kwargs['embed']
 
     async def test_user_report_retains_evidence_guidance_after_restart(self):
-        embed = await self.open_and_restart('report_user')
+        report = await self.open_and_restart('report_user')
+        await self.advance(30)
+        await self.relay(report)
+        await self.advance(59)
+        self.user.send.assert_not_awaited()
+        await self.advance(1)
+        self.user.send.assert_awaited_once()
+        embed = self.user.send.call_args.kwargs['embed']
+        await self.relay(report)
+        await self.advance(60)
+        self.user.send.assert_awaited_once()
         self.assertEqual(embed.title, 'Ticket Information')
-        self.assertIn('username of the user', embed.description)
-        self.assertIn('Text or image evidence', embed.description)
+        self.assertIn('reported user’s username', embed.description)
+        self.assertIn('screenshots', embed.description)
 
     async def test_account_question_retains_generic_guidance_after_restart(self):
-        embed = await self.open_and_restart('account_question')
+        await self.open_and_restart('account_question')
+        await self.advance(59)
+        self.user.send.assert_not_awaited()
+        await self.advance(1)
+        embed = self.user.send.call_args.kwargs['embed']
         self.assertIn('Please be patient', embed.description)
-        self.assertNotIn('username of the user', embed.description)
+        self.assertNotIn('reported user’s username', embed.description)
 
     async def test_report_without_a_kind_retains_generic_guidance_after_restart(self):
-        embed = await self.open_and_restart(None)
+        hf.get_user_locale.return_value = 'unsupported'
+        await self.open_and_restart(None)
+        await self.advance(60)
+        embed = self.user.send.call_args.kwargs['embed']
         self.assertIn('Please be patient', embed.description)
-        self.assertNotIn('username of the user', embed.description)
+        self.assertNotIn('reported user’s username', embed.description)
+
+    async def test_staff_reply_cancels_wait_and_next_reporter_message_can_rearm(self):
+        report = await self.open_and_restart('report_user')
+        await self.advance(30)
+        await self.relay(report, staff=True)
+        self.user.send.reset_mock()
+        await self.advance(60)
+        self.user.send.assert_not_awaited()
+
+        hf.get_user_locale.return_value = 'es'
+        await self.relay(report)
+        await self.advance(60)
+        embed = self.user.send.call_args.kwargs['embed']
+        self.assertEqual(embed.title, 'Información del reporte')
+        self.assertIn('Ten paciencia', embed.description)
+        self.assertIn('nombre de usuario', embed.description)
+
+    async def test_closed_report_has_no_pending_notice(self):
+        await self.open_and_restart('report_user')
+        self.bot.db['reports'].clear()
+        await self.advance(60)
+        self.user.send.assert_not_awaited()
 
 
 if __name__ == '__main__':

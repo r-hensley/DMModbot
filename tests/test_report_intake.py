@@ -124,7 +124,10 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.user.id, self.bot.db["reports"])
         self.assertEqual(len(self.bot.db["recent_reports"][self.guild.id][self.user.id]), 1)
         self.assertIn("Conversación cerrada", repr(self.card.edit.call_args.kwargs["view"].to_components()))
-        self.user.dm_channel.send.assert_awaited_with("**Conversación cerrada**")
+        notice = self.user.dm_channel.send.call_args.args[0]
+        self.assertTrue(notice.startswith(f"**\u2800\n\n\n__{' ' * 70}__**\n"))
+        self.assertIn("**Esta conversación se ha cerrado.", notice)
+        self.assertIn("envía un nuevo mensaje aquí para iniciar otro reporte.**", notice)
 
     async def test_block_is_rechecked_at_submission(self):
         await self.cog.receive_users(self.message_with("A report draft"))

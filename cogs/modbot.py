@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from .report_intake import CloseReportView, ReportIntake, card_copy, status_card, trace_flow, trace_flow_error
 from .utils.db_utils import get_thread_id_to_thread_info
@@ -12,6 +12,7 @@ from .utils import helper_functions as hf
 # from cogs.utils.BotUtils import bot_utils as utils
 
 logger = logging.getLogger(__name__)
+FOLLOWUP_DELAY = 60
 
 # database structure
 # {
@@ -87,9 +88,11 @@ class Modbot(commands.Cog):
     async def cog_load(self):
         self.close_view = CloseReportView(self)
         self.bot.add_view(self.close_view)
+        self.followup_loop.start()
         trace_flow("cog_loaded")
 
     def cog_unload(self):
+        self.followup_loop.cancel()
         self.close_view.stop()
         for intake in self.intakes.values():
             intake.view.stop()
@@ -382,7 +385,8 @@ class Modbot(commands.Cog):
             trace_flow("draft_delivered", flow_attempt)
             stage = "save_report"
             await hf.add_report_to_db(author, report_thread, report_room_type,
-                                      report_kind=report_kind, anonymous=anonymous, dm_card_id=dm_card_id)
+                                      report_kind=report_kind, anonymous=anonymous, dm_card_id=dm_card_id,
+                                      followup_due_at=discord.utils.utcnow().timestamp() + FOLLOWUP_DELAY)
         except Exception as error:
             trace_flow_error("open_report_error", error, flow_attempt, stage=stage)
             if report_thread is not None:
@@ -438,6 +442,18 @@ class Modbot(commands.Cog):
                 trace_flow("relay_consumed", direction=direction)
             return
 
+        # Record activity before the network calls so a due notice sees the newer message.
+        from_reporter = isinstance(open_report.source, discord.DMChannel)
+        previous_due = thread_info.get('followup_due_at')
+        followup_changed = False
+        if not thread_info.get('sent_followup_notice') or 'followup_due_at' in thread_info:
+            if from_reporter:
+                thread_info['followup_due_at'] = discord.utils.utcnow().timestamp() + FOLLOWUP_DELAY
+                followup_changed = True
+            elif previous_due is not None:
+                thread_info['followup_due_at'] = None
+                followup_changed = True
+
         try:
             anonymous = open_report.dest == open_report.thread and thread_info.get('anonymous_reporter', False)
             await hf.forward_report_media(open_report.dest, msg, anonymous=anonymous)
@@ -467,54 +483,65 @@ class Modbot(commands.Cog):
                 trace_flow("relay_delivered", direction=direction)
             await hf.try_add_reaction(msg, "📨")
 
-            # The user's very first message is delivered separately (outside of send_message()) when the
-            # report room is created. This is the first message that actually passes through send_message(),
-            # i.e. the user's *next* message after that initial connection.
-            if not thread_info.get('sent_followup_notice'):
-                if isinstance(open_report.source, discord.DMChannel):
-                    # The user sent a further message - let them know once that their messages are indeed
-                    # reaching the moderators.
-                    thread_info['sent_followup_notice'] = True
-                    await hf.dump_json()
-                    await self.send_followup_notice(open_report.source, thread_info.get('report_kind'))
-                elif isinstance(open_report.dest, discord.DMChannel):
-                    # A moderator replied before the user sent anything else. The user already has a real
-                    # response, so the reassurance notice would just be redundant - mark it as "sent" without
-                    # actually sending it so it never fires later either.
-                    thread_info['sent_followup_notice'] = True
-                    await hf.dump_json()
+            if followup_changed:
+                await hf.dump_json()
 
-    @staticmethod
-    async def send_followup_notice(dm_channel: discord.DMChannel, report_kind: Optional[str] = None):
-        """Sends a one-time embed to the user letting them know their messages are reaching the moderators.
+    @tasks.loop(seconds=5)
+    async def followup_loop(self):
+        now = discord.utils.utcnow().timestamp()
+        for user_id, report in list(self.bot.db['reports'].items()):
+            due = report.get('followup_due_at')
+            if due is None or due > now or report.get('sent_followup_notice'):
+                continue
+            try:
+                await self.send_due_followup(user_id, report, due)
+            except (discord.HTTPException, OSError) as error:
+                trace_flow_error("followup_error", error)
+                logger.warning("Could not process a report follow-up (%s)", type(error).__name__)
 
-        This is sent for all report types. If the ticket is specifically a "Report a User" ticket
-        (report_kind == "report_user"), an additional section asking for evidence is appended."""
-        description = (
-            "-# Thanks for opening a ticket! We'll look into it and get back to you soon.\n\n"
-            "-# If you haven't received a reply yet, it's likely because the moderators are currently busy. \n\n"
-            "-# **Please be patient and don't close the ticket while you're waiting for a response**."
-        )
+    @followup_loop.before_loop
+    async def before_followup_loop(self):
+        await self.bot.wait_until_ready()
 
-        if report_kind == "report_user":
-            description += (
-                "\n\n-# In the meantime, please provide as much information as possible, including:\n"
-                "-# - The username of the user you're reporting\n"
-                "-# - Text or image evidence\n"
-                "-# - A recording, if available\n\n"
-                "-# Please note that without sufficient evidence, staff may be unable to take action "
-                "or may take longer to act. "
-            )
+    async def send_due_followup(self, user_id, report, due):
+        def still_waiting():
+            return (self.bot.db['reports'].get(user_id) is report
+                    and report['thread_id'] not in self.closing_reports
+                    and report.get('followup_due_at') == due)
 
-        embed = discord.Embed(
-            title="Ticket Information",
-            description=description,
-            color=discord.Color.blurple()
-        )
+        if not still_waiting():
+            return
         try:
-            await dm_channel.send(embed=embed)
-        except (discord.Forbidden, discord.HTTPException):
-            pass
+            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        except (discord.NotFound, discord.Forbidden):
+            if still_waiting():
+                report.pop('followup_due_at', None)
+                await hf.dump_json()
+            return
+        if not still_waiting() or report.get('sent_followup_notice'):
+            return
+
+        # Save the once-per-report flag before sending to avoid repeats after a restart.
+        report['sent_followup_notice'] = True
+        try:
+            await hf.dump_json()
+        except OSError:
+            report.pop('sent_followup_notice', None)
+            raise
+        if not still_waiting():
+            if self.bot.db['reports'].get(user_id) is report:
+                report.pop('sent_followup_notice', None)
+                await hf.dump_json()
+            return
+
+        report.pop('followup_due_at', None)
+        copy = card_copy(hf.get_user_locale(user_id))
+        description = copy['followup_wait']
+        if report.get('report_kind') == 'report_user':
+            description += "\n\n" + copy['followup_evidence']
+        await user.send(embed=discord.Embed(title=copy['followup_title'], description=description,
+                                            color=discord.Color.blurple()))
+        trace_flow("followup_sent")
 
     async def process_msg_content(self, msg, open_report):
         thread_info = open_report.thread_info
@@ -613,7 +640,8 @@ class Modbot(commands.Cog):
             trace_flow_error("closure_card_error", card_error)
             logger.warning("Could not update the closed report card %s", report['dm_card_id'])
         if notify:
-            notice = f"**{copy['closed']}**"
+            divider = f"**\u2800\n\n\n__{' ' * 70}__**\n"
+            notice = f"{divider}**{copy['closed_notice']}**"
             if error:
                 notice = f"{copy['interrupted']}\n{notice}"
             try:
