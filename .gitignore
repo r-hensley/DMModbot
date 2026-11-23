@@ -9,3 +9,5 @@ __pycache__*
 .venv
 .env
 venv/*
+/tracebacks.db
+/tracebacks.db-*

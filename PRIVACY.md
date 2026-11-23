@@ -1,6 +1,6 @@
 # DM Modbot Privacy Policy
 
-**Last updated:** October 6, 2026
+**Last updated:** November 22, 2026
 
 DM Modbot is operated by **ryry013** on Discord. This policy explains how the
 bot handles information when connecting users with server staff for reports,
@@ -57,6 +57,8 @@ content to train AI or machine learning models.
 
 The bot stores settings, conversation state, and recent report information
 in JSON files on the host where it runs. It also creates database backups.
+The bot host keeps a private diagnostic database with traceback samples and
+error occurrence details.
 Full report conversations and relayed attachments are posted to Discord
 messages and threads; short excerpts may also be included in the bot's
 recent report records or diagnostic messages.

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-# Keep the tests independent of the bot's optional NLP dependencies and submodule.
+# Keep the report recovery tests independent of the bot's optional NLP helpers.
 test_package = types.ModuleType('_report_recovery_test_cogs')
 test_package.__path__ = [str(Path(__file__).resolve().parents[1] / 'cogs')]
 utils_package = types.ModuleType('_report_recovery_test_cogs.utils')

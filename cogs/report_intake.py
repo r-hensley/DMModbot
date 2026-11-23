@@ -4,6 +4,7 @@ import os
 
 import discord
 
+from cogs.utils.BotUtils import bot_utils as utils
 from .utils import helper_functions as hf
 
 
@@ -173,7 +174,7 @@ def status_card(text):
     return discord.ui.LayoutView().add_item(card(display(text)))
 
 
-class DraftModal(discord.ui.Modal):
+class DraftModal(utils.RaiModal):
     def __init__(self, intake):
         super().__init__(title=intake.copy["edit"], timeout=300)
         self.intake = intake
@@ -198,7 +199,12 @@ class DraftModal(discord.ui.Modal):
             await self.intake.refresh()
 
 
-class IntakeView(discord.ui.LayoutView):
+class ReportLayoutView(discord.ui.LayoutView):
+    async def on_error(self, interaction, error, item):
+        await utils.send_error_embed(interaction.client, f"{type(self).__name__}.{item.custom_id}", error)
+
+
+class IntakeView(ReportLayoutView):
     def __init__(self, intake):
         super().__init__(timeout=300)
         self.intake = intake
@@ -450,7 +456,7 @@ class ReportIntake:
                     await self.message.edit(view=status_card(self.copy["failed"]))
 
 
-class CloseReportView(discord.ui.LayoutView):
+class CloseReportView(ReportLayoutView):
     def __init__(self, cog, label="Close conversation", content=None):
         super().__init__(timeout=None)
         self.cog = cog
@@ -475,7 +481,7 @@ class CloseReportView(discord.ui.LayoutView):
             await result.response.defer()
             await result.delete_original_response()
 
-        view = discord.ui.View(timeout=60)
+        view = utils.RaiView(timeout=60)
         view.add_item(button(copy["close"], confirm, style=discord.ButtonStyle.danger))
         view.add_item(button(copy["keep"], cancel))
         await interaction.response.send_message(copy["confirm"], view=view, ephemeral=True)

@@ -117,8 +117,15 @@ class Modbot(commands.Cog):
         if open_report and open_report.thread_info['thread_id'] not in self.closing_reports:
             try:
                 await self.send_message(msg, open_report)
-            except Exception:
-                await self.end_report(open_report, error=True)
+            except Exception as error:
+                direction = "staff to reporter" if msg.guild else "reporter to staff"
+                error.add_note(f"Closing report thread {open_report.thread.id} after relaying a message "
+                               f"from {direction} failed.")
+                try:
+                    await self.end_report(open_report, error=True)
+                except Exception as cleanup_error:
+                    error.add_note(f"Closing the report also failed: {type(cleanup_error).__name__}: {cleanup_error}")
+                    logger.exception("Could not close report thread %s after relay failure", open_report.thread.id)
                 raise
 
     async def receive_users(self, msg: discord.Message) -> bool:
@@ -308,11 +315,16 @@ class Modbot(commands.Cog):
 
         try:
             await open_room()
-        except Exception:
-            if author.id in self.bot.db['reports']:
-                del self.bot.db['reports'][author.id]
-                await hf.dump_json()
-            await self.notify_end_thread(meta_channel, author.dm_channel, True)
+        except Exception as error:
+            error.add_note(f"Opening a ban appeal room in guild {guild.id} failed.")
+            try:
+                if author.id in self.bot.db['reports']:
+                    del self.bot.db['reports'][author.id]
+                    await hf.dump_json()
+                await self.notify_end_thread(meta_channel, author.dm_channel, True)
+            except Exception as cleanup_error:
+                error.add_note(f"Ban appeal cleanup also failed: {type(cleanup_error).__name__}: {cleanup_error}")
+                logger.exception("Could not clean up failed ban appeal in guild %s", guild.id)
             raise
 
     async def start_report_room(self, author, guild, messages, draft, report_room_type,
@@ -633,7 +645,18 @@ class Modbot(commands.Cog):
                     except (discord.NotFound, discord.HTTPException, discord.Forbidden):
                         source = after
 
-                await self.end_report(OpenReport(thread_info, user, after, source, after), True)
+                if self.bot.db['reports'].get(user.id) is not thread_info or thread_id in self.closing_reports:
+                    return
+                reason = "Report thread archived while the report was active"
+                detail = f"{reason}. Thread {thread_id}, guild {after.guild.id}."
+                logger.warning("%s", detail)
+                try:
+                    await self.end_report(OpenReport(thread_info, user, after, source, after), True)
+                finally:
+                    try:
+                        await self.bot.traceback_store.record_notice("on_thread_update", reason, detail)
+                    except Exception:
+                        logger.exception("Could not archive the closure notice for report thread %s", thread_id)
 
             # else, if the thread at least is in the report room, but not an active thread, still close it
             elif hf.is_thread_in_a_report_channel(after):

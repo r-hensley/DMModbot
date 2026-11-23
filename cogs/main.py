@@ -1,17 +1,34 @@
+import asyncio
 import logging
 import os
+import sqlite3
+import sys
 
 import discord
 from discord.ext import commands, tasks
-import sys
 
 from cogs.utils.BotUtils import bot_utils as utils
 from .utils import helper_functions as hf
+from .utils.traceback_store import TracebackStore
+
+
+logger = logging.getLogger(__name__)
 
 
 class Main(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot: commands.Bot = bot
+
+    async def cog_load(self):
+        store = TracebackStore()
+        try:
+            await asyncio.to_thread(store.initialize)
+        except (OSError, sqlite3.Error):
+            logger.exception("Could not initialize the local traceback archive")
+        self.bot.traceback_store = store
+        self.bot.record_traceback = store.record_exception
+        if utils.here.bot is None:
+            utils.setup(bot=self.bot, loop=asyncio.get_running_loop())
         self.bot.tree.on_error = on_tree_error
         self.bot.on_error = self.on_error
         self.autosave_db.start()
@@ -58,18 +75,16 @@ class Main(commands.Cog):
     
     @commands.Cog.listener()
     async def on_error(self, event: str, *args, **kwargs):
-        # Get the exception info
-        # exc_info() returns the tuple (type(e), e, e.__traceback__)
-        error_info = sys.exc_info()
-        if error_info[0] is None:
+        error = sys.exception()
+        if error is None:
             print("No error occurred, can't send error embed.")
             return
-        
-        # Create an Exception object from the exception info
-        # error = error_info[0](error_info[1]).with_traceback(error_info[2])
-        
-        # Use the send_error_embed function
-        await utils.send_error_embed(self.bot, event, error_info[1], *args, **kwargs)
+
+        if event == "on_message" and args and isinstance(args[0], discord.Message):
+            # Report DMs can be anonymous, and the source channel may be uncached.
+            message = args[0]
+            args = (f"Message ID {message.id}, channel ID {message.channel.id}",)
+        await utils.send_error_embed(self.bot, event, error, *args, **kwargs)
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
@@ -169,22 +184,4 @@ async def setup(bot: commands.Bot):
     
 
 async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    print('on tree error')
-    qualified_name = getattr(interaction.command, 'qualified_name', interaction.command.name)
-    e = discord.Embed(title=f'App Command Error ({interaction.type})', colour=0xcc3366)
-    e.add_field(name='Name', value=qualified_name)
-    e.add_field(name='Author', value=interaction.user)
-
-    fmt = f'Channel: {interaction.channel} (ID: {interaction.channel.id})'
-    if interaction.guild:
-        fmt = f'{fmt}\nGuild: {interaction.guild} (ID: {interaction.guild.id})'
-
-    e.add_field(name='Location', value=fmt, inline=False)
-
-    if interaction.data:
-        e.add_field(name="Data", value=f"```{interaction.data}```")
-
-    if interaction.extras:
-        e.add_field(name="Extras", value=f"```{interaction.extras}```")
-
-    await utils.send_error_embed(interaction.client, interaction, error, e)
+    await utils.send_error_embed(interaction.client, interaction, error)

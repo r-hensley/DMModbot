@@ -67,3 +67,36 @@ only accepts the bot's shipped extensions and the two named reload
 helpers. Pull or copy the code onto the host before reloading. Reload
 `report_intake` before `modbot` when both files changed. If a crash leaves the
 socket behind, remove it after verifying that the bot process has stopped.
+
+### Reviewing tracebacks
+
+DMModbot creates a private `tracebacks.db` beside `Modbot.py` on the bot host.
+The bot records an event before attempting to post the full traceback to
+`TRACEBACK_LOGGING_CHANNEL` (or `ERROR_CHANNEL_ID`, if configured). The ID in
+the Discord post matches `events.id`. The archive stores a full traceback sample
+per caller path and records each occurrence separately. A thread archive that
+interrupts an active report appears in the same database as a closure notice,
+with a null `exception_class`.
+
+After copying the updated code onto a running bot host, use the control socket
+to run `reload main report_intake modbot` and then `status`. Reloading `main`
+initializes the archive. The `modbot` reload clears any in-progress intake drafts.
+
+From the checkout on the bot host, open the archive read-only as the bot user.
+Tracebacks can contain private exception diagnostics.
+
+```bash
+python3 - <<'PY'
+from contextlib import closing
+import sqlite3
+
+with closing(sqlite3.connect('file:tracebacks.db?mode=ro', uri=True)) as db:
+    for row in db.execute('SELECT * FROM group_summary ORDER BY last_seen DESC LIMIT 20'):
+        print(row)
+PY
+```
+
+To investigate a group, join `events.caller_path_id` to `caller_paths.id` and
+filter on `caller_paths.group_id`. `events.context` contains details for that
+occurrence, such as the report thread ID and relay direction. The full example
+stack and exception chain are in `caller_paths.sample_traceback`.
