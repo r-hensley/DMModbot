@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from time import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -6,7 +10,7 @@ import discord
 from discord.ext import tasks
 
 from cogs.modbot import Modbot, OpenReport
-from cogs.report_intake import CloseReportView, DraftModal
+from cogs.report_intake import CloseReportView, DraftModal, TRACE_SECONDS, trace_flow
 from cogs.report_status import ReportStatus, ThreadStats
 from cogs.utils import helper_functions as hf
 
@@ -134,3 +138,31 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
         self.staff.send.assert_not_awaited()
         self.assertEqual(self.bot.db["reports"], {})
         self.assertNotIn(self.user.id, self.cog.intakes)
+
+    async def test_temporary_trace_reports_failed_open_without_private_payload(self):
+        with TemporaryDirectory() as directory:
+            flag = Path(directory) / "report-flow-debug"
+            flag.touch()
+            with patch("cogs.report_intake.TRACE_FLAG", flag):
+                with self.assertLogs("cogs.report_intake", level="INFO") as logs:
+                    await self.cog.receive_users(self.message_with("PRIVATE DRAFT"))
+                    intake = self.cog.intakes[self.user.id]
+                    await intake.begin(self.interaction())
+                    await intake.select_topic(self.interaction(values=["report"]))
+                    with patch.object(hf, "create_report_thread", side_effect=RuntimeError("PRIVATE ERROR")):
+                        with self.assertRaises(RuntimeError):
+                            await intake.submit(self.interaction())
+
+                output = "\n".join(logs.output)
+                self.assertIn(f"event=welcome_sent attempt={intake.attempt}", output)
+                self.assertIn(f"event=open_report_error attempt={intake.attempt}", output)
+                self.assertIn("stage=create_thread", output)
+                self.assertNotIn("PRIVATE", output)
+                self.assertNotIn(self.user.name, output)
+                self.assertNotIn(self.user.mention, output)
+                self.assertNotIn("event=report_opened", output)
+
+                stale = time() - TRACE_SECONDS - 1
+                os.utime(flag, (stale, stale))
+                with self.assertNoLogs("cogs.report_intake", level="INFO"):
+                    trace_flow("report_opened")

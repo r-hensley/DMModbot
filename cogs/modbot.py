@@ -6,7 +6,7 @@ from typing import Optional, Union
 import discord
 from discord.ext import commands
 
-from .report_intake import CloseReportView, ReportIntake, card_copy, status_card
+from .report_intake import CloseReportView, ReportIntake, card_copy, status_card, trace_flow, trace_flow_error
 from .utils.db_utils import get_thread_id_to_thread_info
 from .utils import helper_functions as hf
 # from cogs.utils.BotUtils import bot_utils as utils
@@ -87,6 +87,7 @@ class Modbot(commands.Cog):
     async def cog_load(self):
         self.close_view = CloseReportView(self)
         self.bot.add_view(self.close_view)
+        trace_flow("cog_loaded")
 
     def cog_unload(self):
         self.close_view.stop()
@@ -106,6 +107,7 @@ class Modbot(commands.Cog):
         """PM Bot"""
         # This function will handle new users who are not in a report room and trying to start a new report
         if isinstance(msg.channel, discord.DMChannel):  # in a PM
+            trace_flow("dm_received")
             if await self.receive_users(msg):
                 return
 
@@ -115,9 +117,15 @@ class Modbot(commands.Cog):
         # can be None if the above message was not sent to one of the open report threads in a server: i.e., it's
         # a random unrelated message in a server in a random channel
         if open_report and open_report.thread_info['thread_id'] not in self.closing_reports:
+            new_flow = bool(open_report.thread_info.get('dm_card_id'))
+            direction = "staff_to_reporter" if msg.guild else "reporter_to_staff"
+            if new_flow:
+                trace_flow("relay_started", direction=direction)
             try:
                 await self.send_message(msg, open_report)
             except Exception as error:
+                if new_flow:
+                    trace_flow_error("relay_error", error, direction=direction)
                 direction = "staff to reporter" if msg.guild else "reporter to staff"
                 error.add_note(f"Closing report thread {open_report.thread.id} after relaying a message "
                                f"from {direction} failed.")
@@ -128,18 +136,32 @@ class Modbot(commands.Cog):
                     logger.exception("Could not close report thread %s after relay failure", open_report.thread.id)
                 raise
 
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.guild_id is None and interaction.type in (
+            discord.InteractionType.component, discord.InteractionType.modal_submit,
+        ):
+            trace_flow("dm_interaction_received", kind=interaction.type.name)
+
     async def receive_users(self, msg: discord.Message) -> bool:
         user_id = msg.author.id
         while intake := self.intakes.get(user_id):
-            if await intake.add_message(msg):
-                return True
+            intake.trace("pending_dm_received")
+            try:
+                if await intake.add_message(msg):
+                    return True
+            except Exception as error:
+                trace_flow_error("draft_message_error", error, intake.attempt)
+                raise
 
         if user_id in self.bot.db['reports']:
             return False
         if user_id in self.opening_reports:
+            trace_flow("dm_during_open")
             return True
 
         if time_remaining := self.check_if_recently_finished_report(msg):
+            trace_flow("dm_during_cooldown")
             await msg.author.send(
                 f"You've recently left a report room. Please wait {time_remaining} more seconds before "
                 "joining again. A new report is only needed if you still need help."
@@ -147,11 +169,13 @@ class Modbot(commands.Cog):
             return True
 
         intake = ReportIntake(self, msg)
+        intake.trace("first_dm_received")
         self.intakes[user_id] = intake
         async with intake.lock:
             try:
                 await intake.welcome()
-            except Exception:
+            except Exception as error:
+                trace_flow_error("welcome_error", error, intake.attempt)
                 await intake.finish()
                 raise
         return True
@@ -328,34 +352,49 @@ class Modbot(commands.Cog):
             raise
 
     async def start_report_room(self, author, guild, messages, draft, report_room_type,
-                                *, report_kind=None, anonymous=False, dm_card_id=None) -> bool:
+                                *, report_kind=None, anonymous=False, dm_card_id=None, flow_attempt=None) -> bool:
+        stage = "resolve_destination"
         try:
             report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
+            stage = "permissions"
             await hf.check_bot_perms(report_channel, meta_channel, guild, author, anonymous=anonymous)
+            stage = "server_roles"
             await hf.deny_new_user_role_request(guild, author, draft, meta_channel, anonymous=anonymous)
         except hf.EndEarly:
+            trace_flow("preflight_rejected", flow_attempt, stage=stage)
             return False
+        except Exception as error:
+            trace_flow_error("preflight_error", error, flow_attempt, stage=stage)
+            raise
 
         report_thread = None
+        stage = "create_thread"
         try:
             report_thread = await hf.create_report_thread(
                 author, draft, report_channel, voice_report=report_room_type == 'voice', anonymous=anonymous,
             )
+            trace_flow("thread_created", flow_attempt)
+            stage = "deliver_draft"
             if not anonymous:
                 await hf.repost_rai_modlog(report_thread)
             await report_thread.send("**Report starts here**")
             await hf.deliver_report_draft(report_thread, author, messages, draft, anonymous=anonymous)
+            trace_flow("draft_delivered", flow_attempt)
+            stage = "save_report"
             await hf.add_report_to_db(author, report_thread, report_room_type,
                                       report_kind=report_kind, anonymous=anonymous, dm_card_id=dm_card_id)
-        except Exception:
+        except Exception as error:
+            trace_flow_error("open_report_error", error, flow_attempt, stage=stage)
             if report_thread is not None:
                 self.bot.db['reports'].pop(author.id, None)
                 try:
                     await hf.close_thread(report_thread)
                     await hf.dump_json()
-                except Exception:
+                except Exception as cleanup_error:
+                    trace_flow_error("open_cleanup_error", cleanup_error, flow_attempt)
                     logger.exception("Could not close incomplete report thread %s", report_thread.id)
             raise
+        trace_flow("report_opened", flow_attempt)
         return True
 
     async def close_dm_report(self, user, channel, report):
@@ -374,11 +413,14 @@ class Modbot(commands.Cog):
         await self.end_report(OpenReport(report, user, thread, channel, thread), error=False)
 
     async def send_message(self, msg: discord.Message, open_report: OpenReport):
+        thread_info = open_report.thread_info
+        new_flow = bool(thread_info.get('dm_card_id'))
+        direction = "staff_to_reporter" if isinstance(open_report.dest, discord.DMChannel) else "reporter_to_staff"
         # ignore messages starting with _ or other bot prefixes, also ignore all bot messages
         if not await hf.check_if_valid_msg(msg):
+            if new_flow:
+                trace_flow("relay_ignored", direction=direction)
             return
-
-        thread_info = open_report.thread_info
 
         # message is from report channel >> DMChannel
         # this creates a list of moderator IDs
@@ -392,6 +434,8 @@ class Modbot(commands.Cog):
         try:
             cont, cont2 = await self.process_msg_content(msg, open_report)
         except hf.EndEarly:
+            if new_flow:
+                trace_flow("relay_consumed", direction=direction)
             return
 
         try:
@@ -405,7 +449,9 @@ class Modbot(commands.Cog):
                     else:
                         await open_report.dest.send(part)
 
-        except discord.Forbidden:
+        except discord.Forbidden as error:
+            if new_flow:
+                trace_flow_error("relay_forbidden", error, direction=direction)
             if open_report.dest == open_report.user.dm_channel:
                 await msg.channel.send("I couldn't send a message to the user (maybe they blocked me or left "
                                        "the server). I will close the chat.")
@@ -417,6 +463,8 @@ class Modbot(commands.Cog):
             await self.end_report(open_report, False)
 
         else:
+            if new_flow:
+                trace_flow("relay_delivered", direction=direction)
             await hf.try_add_reaction(msg, "📨")
 
             # The user's very first message is delivered separately (outside of send_message()) when the
@@ -550,15 +598,19 @@ class Modbot(commands.Cog):
                 except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
                     pass
     async def update_dm_report_card(self, channel, user, report, *, error, notify=False):
-        if channel is None or not report.get('dm_card_id'):
+        if not report.get('dm_card_id'):
+            return
+        if channel is None:
+            trace_flow("closure_dm_unavailable")
             return
         copy = card_copy(hf.get_user_locale(user.id))
         view = status_card(copy['interrupted' if error else 'closed'])
         try:
             await channel.get_partial_message(report['dm_card_id']).edit(view=view)
         except discord.NotFound:
-            pass
-        except discord.HTTPException:
+            trace_flow("closure_card_missing")
+        except discord.HTTPException as card_error:
+            trace_flow_error("closure_card_error", card_error)
             logger.warning("Could not update the closed report card %s", report['dm_card_id'])
         if notify:
             notice = f"**{copy['closed']}**"
@@ -566,8 +618,11 @@ class Modbot(commands.Cog):
                 notice = f"{copy['interrupted']}\n{notice}"
             try:
                 await channel.send(notice)
-            except discord.HTTPException:
+            except discord.HTTPException as notice_error:
+                trace_flow_error("closure_notice_error", notice_error)
                 logger.warning("Could not send closure notice for report card %s", report['dm_card_id'])
+            else:
+                trace_flow("closure_notice_sent")
 
     async def end_report(self, open_report: OpenReport, error, finish=False, notify=True):
         user_id = open_report.user.id
@@ -577,6 +632,9 @@ class Modbot(commands.Cog):
             return
 
         self.closing_reports.add(thread_id)
+        new_flow = bool(report.get('dm_card_id'))
+        if new_flow:
+            trace_flow("report_closing", interrupted=bool(error))
         try:
             thread = open_report.thread
             await hf.close_thread(thread, finish)
@@ -596,6 +654,12 @@ class Modbot(commands.Cog):
                     await hf.log_record_of_report(thread, open_report.user)
             finally:
                 await hf.dump_json()
+            if new_flow:
+                trace_flow("report_closed")
+        except Exception as close_error:
+            if new_flow:
+                trace_flow_error("report_close_error", close_error)
+            raise
         finally:
             self.closing_reports.discard(thread_id)
 

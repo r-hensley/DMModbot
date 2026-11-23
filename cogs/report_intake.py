@@ -1,11 +1,35 @@
 """Components V2 cards for reports started in the bot's DMs."""
 import asyncio
+import logging
 import os
+from pathlib import Path
+from time import time
+from uuid import uuid4
 
 import discord
 
 from cogs.utils.BotUtils import bot_utils as utils
 from .utils import helper_functions as hf
+
+
+logger = logging.getLogger(__name__)
+TRACE_FLAG = Path(__file__).resolve().parents[1] / ".control" / "report-flow-debug"
+TRACE_SECONDS = 48 * 60 * 60
+
+
+def trace_flow(event, attempt=None, **details):
+    try:
+        age = time() - TRACE_FLAG.stat().st_mtime
+    except OSError:
+        return
+    if 0 <= age < TRACE_SECONDS:
+        fields = " ".join(f"{key}={value}" for key, value in details.items())
+        logger.info("report_flow event=%s attempt=%s %s", event, attempt or "-", fields)
+
+
+def trace_flow_error(event, error, attempt=None, **details):
+    trace_flow(event, attempt, error=type(error).__name__,
+               http_status=getattr(error, "status", None), discord_code=getattr(error, "code", None), **details)
 
 
 WELCOME = (
@@ -174,7 +198,7 @@ def status_card(text):
     return discord.ui.LayoutView().add_item(card(display(text)))
 
 
-class DraftModal(utils.RaiModal):
+class DraftModal(discord.ui.Modal):
     def __init__(self, intake):
         super().__init__(title=intake.copy["edit"], timeout=300)
         self.intake = intake
@@ -186,9 +210,11 @@ class DraftModal(utils.RaiModal):
         self.add_item(discord.ui.Label(text=intake.copy["draft"], component=self.draft))
 
     async def on_submit(self, interaction):
+        self.intake.trace("draft_edit_submitted")
         await interaction.response.defer()
         async with self.intake.lock:
             if not self.intake.active or self.revision != self.intake.revision:
+                self.intake.trace("draft_edit_rejected", active=self.intake.active)
                 await interaction.followup.send(
                     self.intake.copy["expired"] if not self.intake.active else self.intake.copy["stale"],
                     ephemeral=True,
@@ -197,10 +223,18 @@ class DraftModal(utils.RaiModal):
             self.intake.draft = self.draft.value
             self.intake.revision += 1
             await self.intake.refresh()
+            self.intake.trace("draft_edit_saved")
+
+    async def on_error(self, interaction, error):
+        trace_flow_error("draft_edit_error", error, self.intake.attempt)
+        await utils.send_error_embed(interaction.client, "DraftModal.on_submit", error)
 
 
 class ReportLayoutView(discord.ui.LayoutView):
     async def on_error(self, interaction, error, item):
+        intake = getattr(self, "intake", None)
+        trace_flow_error("interaction_error", error, intake.attempt if intake else None,
+                         action=getattr(item.callback, "__name__", "unknown"))
         await utils.send_error_embed(interaction.client, f"{type(self).__name__}.{item.custom_id}", error)
 
 
@@ -210,18 +244,27 @@ class IntakeView(ReportLayoutView):
         self.intake = intake
 
     async def interaction_check(self, interaction):
-        return interaction.user.id == self.intake.user.id
+        valid = interaction.user.id == self.intake.user.id
+        if not valid:
+            self.intake.trace("interaction_rejected")
+        return valid
 
     async def on_timeout(self):
         async with self.intake.lock:
             if self.intake.active and self.intake.view is self:
-                await self.intake.finish(self.intake.copy["expired"])
+                self.intake.trace("intake_expired", at="draft" if self.intake.guild_ids else "welcome")
+                try:
+                    await self.intake.finish(self.intake.copy["expired"])
+                except Exception as error:
+                    trace_flow_error("expiry_notice_error", error, self.intake.attempt)
+                    raise
 
 
 class ReportIntake:
     def __init__(self, cog, message):
         self.cog = cog
         self.bot = cog.bot
+        self.attempt = uuid4().hex[:12]
         self.user = message.author
         self.channel = message.channel
         self.lock = asyncio.Lock()
@@ -237,6 +280,9 @@ class ReportIntake:
         self.messages = [message]
         self.revision = 0
 
+    def trace(self, event, **details):
+        trace_flow(event, self.attempt, **details)
+
     @property
     def active(self):
         return self.cog.intakes.get(self.user.id) is self
@@ -251,23 +297,29 @@ class ReportIntake:
         )
 
     async def welcome(self):
+        self.trace("welcome_sending")
         self.view.add_item(card(display(WELCOME), discord.ui.ActionRow(
             button("Push here", self.begin, style=discord.ButtonStyle.primary),
         )))
         self.message = await self.channel.send(view=self.view)
+        self.trace("welcome_sent")
 
     async def begin(self, interaction):
+        self.trace("welcome_clicked")
         await interaction.response.defer()
         async with self.lock:
             if not self.active or self.message.id != interaction.message.id:
+                self.trace("welcome_stale")
                 return
             locale = str(interaction.locale).split("-")[0]
             self.copy = card_copy(locale)
             self.bot.db.setdefault("user_localizations", {})[self.user.id] = locale
             await hf.dump_json()
+            self.trace("locale_saved", supported=locale in COPY)
             guilds = sorted((guild for guild in self.bot.guilds if self.eligible(guild)),
                             key=lambda guild: (guild.name.casefold(), guild.id))
             self.guild_ids = [guild.id for guild in guilds]
+            self.trace("servers_checked", eligible=len(guilds))
             if len(guilds) == 1:
                 self.guild_id = guilds[0].id
 
@@ -279,6 +331,7 @@ class ReportIntake:
             if not guilds:
                 self.cog.intakes.pop(self.user.id, None)
                 await self.channel.send(view=status_card(self.copy["none"]))
+                self.trace("no_servers_notice_sent")
                 return
             self.view = IntakeView(self)
             self.build_form()
@@ -288,6 +341,7 @@ class ReportIntake:
                 self.view.stop()
                 self.cog.intakes.pop(self.user.id, None)
                 raise
+            self.trace("draft_card_sent")
 
     def build_form(self):
         copy = self.copy
@@ -355,6 +409,7 @@ class ReportIntake:
                 return False
             draft = "\n".join(part for part in (self.draft, message.content) if part)
             if len(draft) > 4000 or len(self.messages) >= 20:
+                self.trace("draft_limit")
                 await self.channel.send(self.copy["limit"])
             else:
                 self.draft = draft
@@ -362,6 +417,7 @@ class ReportIntake:
                 self.revision += 1
                 if self.guild_ids:
                     await self.refresh()
+                self.trace("draft_message_added")
             return True
 
     async def update(self, interaction, *, guild_id=None, topic=None, page_delta=0, toggle=False):
@@ -370,13 +426,19 @@ class ReportIntake:
             if self.active:
                 if guild_id in self.guild_ids:
                     self.guild_id = guild_id
+                    self.trace("server_selected")
                 if topic in TOPICS:
                     self.topic = topic
+                    self.trace("topic_selected")
                 if page_delta:
                     self.page = max(0, min(self.page + page_delta, (len(self.guild_ids) - 1) // 25 * 25))
+                    self.trace("server_page_changed")
                 if toggle:
                     self.anonymous = not self.anonymous
+                    self.trace("anonymity_changed")
                 await self.refresh()
+            else:
+                self.trace("draft_control_stale")
 
     async def select_guild(self, interaction):
         await self.update(interaction, guild_id=int(interaction.data["values"][0]))
@@ -395,11 +457,13 @@ class ReportIntake:
 
     async def edit(self, interaction):
         if self.lock.locked():
+            self.trace("draft_edit_busy")
             await interaction.response.defer()
             return
         async with self.lock:
             if self.active:
                 await interaction.response.send_modal(DraftModal(self))
+                self.trace("draft_editor_opened")
             else:
                 await interaction.response.defer()
 
@@ -407,6 +471,7 @@ class ReportIntake:
         await interaction.response.defer()
         async with self.lock:
             if self.active:
+                self.trace("draft_canceled")
                 await self.finish(self.copy["canceled"])
 
     async def finish(self, text=None):
@@ -419,16 +484,20 @@ class ReportIntake:
                 pass
 
     async def submit(self, interaction):
+        self.trace("submit_clicked")
         await interaction.response.defer()
         async with self.lock:
             if not self.active:
+                self.trace("submit_stale")
                 return
             guild = self.bot.get_guild(self.guild_id) if self.guild_id else None
             if (not self.eligible(guild) or self.user.id in self.bot.db["reports"]
                     or self.user.id in self.cog.opening_reports):
+                self.trace("submit_unavailable")
                 await self.finish(self.copy["unavailable"])
                 return
             if self.topic not in TOPICS or not self.has_content():
+                self.trace("submit_incomplete")
                 return
             # Once a moderator thread may exist, retire this draft to avoid submitting it twice.
             self.view.stop()
@@ -440,6 +509,7 @@ class ReportIntake:
                 success = await self.cog.start_report_room(
                     self.user, guild, self.messages, self.draft, room_type,
                     report_kind=report_kind, anonymous=self.anonymous, dm_card_id=self.message.id,
+                    flow_attempt=self.attempt,
                 )
             finally:
                 self.cog.opening_reports.discard(self.user.id)
@@ -450,10 +520,12 @@ class ReportIntake:
                     # The cog's persistent handler owns close clicks, including after a reload.
                     view.stop()
                     await self.message.edit(view=view)
+                    self.trace("connected_card_sent")
                     if self.bot.db["reports"].get(self.user.id) is not report:
                         await self.cog.update_dm_report_card(self.channel, self.user, report, error=False)
                 elif not success:
                     await self.message.edit(view=status_card(self.copy["failed"]))
+                    self.trace("failed_notice_sent")
 
 
 class CloseReportView(ReportLayoutView):
@@ -466,18 +538,22 @@ class CloseReportView(ReportLayoutView):
         self.add_item(card(display(content), row) if content else card(row))
 
     async def ask(self, interaction):
+        trace_flow("close_clicked")
         copy = card_copy(hf.get_user_locale(interaction.user.id))
         report = self.cog.bot.db["reports"].get(interaction.user.id)
         if not report or report.get("dm_card_id") != interaction.message.id:
+            trace_flow("close_stale")
             await interaction.response.send_message(copy["closed"], ephemeral=True)
             return
 
         async def confirm(result):
+            trace_flow("close_confirmed")
             await result.response.defer()
             await self.cog.close_dm_report(result.user, interaction.channel, report)
             await result.delete_original_response()
 
         async def cancel(result):
+            trace_flow("close_canceled")
             await result.response.defer()
             await result.delete_original_response()
 
