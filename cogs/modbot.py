@@ -356,6 +356,12 @@ class Modbot(commands.Cog):
                                 *, report_kind=None, anonymous=False, dm_card_id=None, flow_attempt=None) -> bool:
         stage = "resolve_destination"
         try:
+            if report_kind == "voice_access":
+                config = self.bot.db["guilds"][guild.id]
+                if (guild.id != hf.SP_SERV_ID or report_room_type != "secondary"
+                        or not config.get("secondary_channel") or config["secondary_channel"] == config["channel"]):
+                    trace_flow("preflight_rejected", flow_attempt, stage=stage)
+                    return False
             report_channel, meta_channel = await hf.get_report_variables(guild, report_room_type, author)
             stage = "permissions"
             await hf.check_bot_perms(report_channel, meta_channel, guild, author, anonymous=anonymous)
@@ -372,7 +378,8 @@ class Modbot(commands.Cog):
         stage = "create_thread"
         try:
             report_thread = await hf.create_report_thread(
-                author, draft, report_channel, voice_report=report_room_type == 'voice', anonymous=anonymous,
+                author, draft, report_channel, voice_report=report_room_type == 'voice' or report_kind == "voice_access",
+                anonymous=anonymous,
             )
             trace_flow("thread_created", flow_attempt)
             stage = "deliver_draft"

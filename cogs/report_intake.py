@@ -1,5 +1,6 @@
 """Components V2 cards for reports started in the bot's DMs."""
 import asyncio
+from datetime import timedelta
 import logging
 import os
 from pathlib import Path
@@ -45,6 +46,7 @@ TOPICS = {
     "account": ("main", "account_question"),
     "question": ("secondary", "server_question"),
     "voice": ("voice", "voice_issue"),
+    "voice_access": ("secondary", "voice_access"),
 }
 COPY = {
     "en": {
@@ -71,6 +73,15 @@ COPY = {
         "followup_wait": "The moderators will look into your report and reply when they can.\n\n**Please be patient and don’t close the ticket while you’re waiting for a response.**",
         "followup_evidence": "If you can, send the reported user’s username and any evidence, such as messages, screenshots, or a recording.",
         "attachments": "Attached items", "previous": "Previous", "next": "Next",
+        "voice_access": "Request voice access",
+        "previous_member": "Have you been in this server before?",
+        "yes": "Yes",
+        "no": "No",
+        "previous_account": "Previous username, user ID, or message link",
+        "identified": "Staff will see your current account to review your request.",
+        "voice_wait": "You can join voice three hours after joining the server.",
+        "voice_wait_until": "You can try joining voice {when}.",
+        "send_request": "Send request",
     },
     "es": {
         "title": "Contactar con moderación", "intro": "El equipo de moderación recibirá tu borrador cuando selecciones Enviar reporte.",
@@ -96,6 +107,15 @@ COPY = {
         "followup_wait": "El equipo de moderación revisará tu reporte y responderá en cuanto pueda.\n\n**Ten paciencia y mantén el reporte abierto mientras esperas una respuesta.**",
         "followup_evidence": "Si puedes, envía el nombre de usuario de la persona reportada y cualquier prueba, como mensajes, capturas de pantalla o una grabación.",
         "attachments": "Archivos adjuntos y otros elementos", "previous": "Anterior", "next": "Siguiente",
+        "voice_access": "Solicitar acceso a voz",
+        "previous_member": "¿Ya habías estado en este servidor?",
+        "yes": "Sí",
+        "no": "No",
+        "previous_account": "Usuario, ID o enlace a un mensaje anterior",
+        "identified": "El equipo de staff verá tu cuenta actual para revisar la solicitud.",
+        "voice_wait": "Puedes entrar a voz tres horas después de unirte al servidor.",
+        "voice_wait_until": "Puedes intentar entrar a voz {when}.",
+        "send_request": "Enviar solicitud",
     },
     "ja": {
         "title": "モデレーターに連絡する", "intro": "「通報を送信」を選ぶと、下書きがモデレーターに届きます。",
@@ -121,6 +141,15 @@ COPY = {
         "followup_wait": "モデレーターが内容を確認し、対応でき次第返信します。\n\n**返信が来るまで通報を閉じずにお待ちください。**",
         "followup_evidence": "可能であれば、通報対象のユーザー名と、メッセージ、スクリーンショット、録音や録画などの証拠を送ってください。",
         "attachments": "添付アイテム", "previous": "前へ", "next": "次へ",
+        "voice_access": "ボイスチャンネルへのアクセスを申請",
+        "previous_member": "以前このサーバーに参加したことがありますか？",
+        "yes": "はい",
+        "no": "いいえ",
+        "previous_account": "以前のユーザー名、ID、またはメッセージリンク",
+        "identified": "スタッフは申請の確認のために現在のアカウントを確認できます。",
+        "voice_wait": "サーバーに参加してから3時間後にボイスチャンネルに入れます。",
+        "voice_wait_until": "{when}、ボイスチャンネルに入れます。",
+        "send_request": "申請を送信",
     },
     "fr": {
         "title": "Contacter la modération", "intro": "La modération recevra ton brouillon quand tu cliqueras sur Envoyer.",
@@ -146,6 +175,15 @@ COPY = {
         "followup_wait": "La modération examinera ton signalement et te répondra dès que possible.\n\n**Merci de patienter et de laisser le signalement ouvert en attendant une réponse.**",
         "followup_evidence": "Si tu peux, envoie le nom d’utilisateur de la personne signalée et les preuves dont tu disposes, comme des messages, des captures d’écran ou un enregistrement.",
         "attachments": "Pièces jointes", "previous": "Précédent", "next": "Suivant",
+        "voice_access": "Demander l’accès au vocal",
+        "previous_member": "As-tu déjà été membre de ce serveur ?",
+        "yes": "Oui",
+        "no": "Non",
+        "previous_account": "Ancien pseudo, ID ou lien vers un message",
+        "identified": "L’équipe verra ton compte actuel pour examiner ta demande.",
+        "voice_wait": "Tu peux rejoindre le vocal trois heures après avoir rejoint le serveur.",
+        "voice_wait_until": "Tu peux essayer de rejoindre le vocal {when}.",
+        "send_request": "Envoyer la demande",
     },
     "ar": {
         "title": "التواصل مع المشرفين", "intro": "سيتلقى المشرفون مسودتك عندما تختار إرسال البلاغ.",
@@ -171,6 +209,15 @@ COPY = {
         "followup_wait": "سيراجع المشرفون بلاغك ويردون عندما يتمكنون من ذلك.\n\n**يرجى التحلي بالصبر وترك البلاغ مفتوحًا حتى يصلك رد.**",
         "followup_evidence": "إن أمكن، أرسل اسم المستخدم الذي أبلغت عنه وأي أدلة، مثل الرسائل أو لقطات الشاشة أو التسجيلات.",
         "attachments": "المرفقات", "previous": "السابق", "next": "التالي",
+        "voice_access": "طلب الوصول إلى القنوات الصوتية",
+        "previous_member": "هل كنت عضوًا في هذا الخادم من قبل؟",
+        "yes": "نعم",
+        "no": "لا",
+        "previous_account": "اسم المستخدم السابق أو معرّفه أو رابط رسالة",
+        "identified": "سيرى فريق الإشراف حسابك الحالي لمراجعة طلبك.",
+        "voice_wait": "يمكنك الانضمام إلى القنوات الصوتية بعد ثلاث ساعات من الانضمام إلى الخادم.",
+        "voice_wait_until": "يمكنك محاولة الانضمام إلى القنوات الصوتية {when}.",
+        "send_request": "إرسال الطلب",
     },
     "zh": {
         "title": "联系管理员", "intro": "选择发送举报后，管理员会收到你的草稿。",
@@ -196,6 +243,15 @@ COPY = {
         "followup_wait": "管理员会查看你的举报，并在方便时回复。\n\n**请耐心等待回复，暂时不要关闭举报。**",
         "followup_evidence": "如果可以，请提供被举报人的用户名，以及消息、截图或录音录像等证据。",
         "attachments": "附件", "previous": "上一页", "next": "下一页",
+        "voice_access": "申请语音频道权限",
+        "previous_member": "你以前加入过这个服务器吗？",
+        "yes": "是",
+        "no": "否",
+        "previous_account": "之前的用户名、用户 ID 或消息链接",
+        "identified": "工作人员会看到你的当前账号，以便审核申请。",
+        "voice_wait": "加入服务器满三小时后即可进入语音频道。",
+        "voice_wait_until": "你可以在 {when} 尝试加入语音频道。",
+        "send_request": "发送申请",
     },
 }
 
@@ -254,6 +310,31 @@ class DraftModal(discord.ui.Modal):
         await utils.send_error_embed(interaction.client, "DraftModal.on_submit", error)
 
 
+class PreviousAccountModal(discord.ui.Modal):
+    def __init__(self, intake):
+        super().__init__(title=intake.copy["voice_access"], timeout=300)
+        self.intake = intake
+        self.revision = intake.revision
+        self.account = discord.ui.TextInput(default=intake.previous_account or None, max_length=300)
+        self.add_item(discord.ui.Label(text=intake.copy["previous_account"], component=self.account))
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer()
+        async with self.intake.lock:
+            if not self.intake.active or self.revision != self.intake.revision:
+                await interaction.followup.send(
+                    self.intake.copy["expired"] if not self.intake.active else self.intake.copy["stale"],
+                    ephemeral=True,
+                )
+                return
+            account = self.account.value.strip()
+            if account:
+                self.intake.previous_account = account
+                self.intake.voice_wait = False
+                self.intake.revision += 1
+                await self.intake.refresh()
+
+
 class ReportLayoutView(discord.ui.LayoutView):
     async def on_error(self, interaction, error, item):
         intake = getattr(self, "intake", None)
@@ -299,6 +380,8 @@ class ReportIntake:
         self.guild_id = None
         self.page = 0
         self.topic = None
+        self.previous_account = ""
+        self.voice_wait = False
         self.anonymous = False
         self.draft = "" if message.content.strip().casefold() in {"hi", "hey", "hello", "hola", "こんにちは"} else message.content
         self.messages = [message]
@@ -369,7 +452,9 @@ class ReportIntake:
 
     def build_form(self):
         copy = self.copy
-        items = [display(f"## {copy['title']}\n{copy['intro']}")]
+        voice_access = self.topic == "voice_access"
+        intro = copy["identified"] if voice_access else copy["intro"]
+        items = [display(f"## {copy['title']}\n{intro}")]
         if len(self.guild_ids) == 1:
             guild = self.bot.get_guild(self.guild_id)
             if guild is not None:
@@ -389,34 +474,59 @@ class ReportIntake:
                 ))
         topic = discord.ui.Select(placeholder=copy["topic"], options=[
             discord.SelectOption(label=copy[key], value=key, default=self.topic == key) for key in TOPICS
+            if key != "voice_access" or self.guild_id == hf.SP_SERV_ID
         ])
         topic.callback = self.select_topic
         summary = discord.utils.escape_markdown(self.draft.strip())
         if len(summary) > 2800:
             summary = summary[:2800] + "…"
         attachment_count = sum(len(msg.attachments) + len(msg.stickers) for msg in self.messages)
-        items.extend([
-            discord.ui.ActionRow(topic),
-            discord.ui.Separator(),
-            display(f"**{copy['draft']}**\n{summary or copy['empty']}"),
-        ])
+        items.append(discord.ui.ActionRow(topic))
+        if voice_access:
+            items.extend([
+                display(copy["previous_member"]),
+                discord.ui.ActionRow(
+                    button(copy["yes"], self.ask_previous_account,
+                           style=discord.ButtonStyle.success if self.previous_account else discord.ButtonStyle.secondary),
+                    button(copy["no"], self.show_voice_wait,
+                           style=discord.ButtonStyle.primary if self.voice_wait else discord.ButtonStyle.secondary),
+                ),
+            ])
+            if self.previous_account:
+                account = discord.utils.escape_markdown(self.previous_account)
+                items.append(display(f"**{copy['previous_account']}**\n{account}"))
+            if self.voice_wait:
+                guild = self.bot.get_guild(self.guild_id)
+                member = guild.get_member(self.user.id) if guild is not None else None
+                joined_at = getattr(member, "joined_at", None)
+                wait = copy["voice_wait"]
+                if joined_at and (ready_at := joined_at + timedelta(hours=3)) > discord.utils.utcnow():
+                    wait = copy["voice_wait_until"].format(when=discord.utils.format_dt(ready_at, "R"))
+                items.append(display(wait))
+        items.extend([discord.ui.Separator(), display(f"**{copy['draft']}**\n{summary or copy['empty']}")])
         if attachment_count:
             items.append(display(f"{copy['attachments']} · {attachment_count}"))
-        anonymous_label = f"{copy['anonymous']} · {copy['on' if self.anonymous else 'off']}"
-        items.append(discord.ui.ActionRow(button(
-            anonymous_label, self.toggle_anonymous,
-            style=discord.ButtonStyle.success if self.anonymous else discord.ButtonStyle.secondary,
-        )))
-        if self.anonymous:
-            items.append(display(f"-# {copy['privacy']}"))
+        if not voice_access:
+            anonymous_label = f"{copy['anonymous']} · {copy['on' if self.anonymous else 'off']}"
+            items.append(discord.ui.ActionRow(button(
+                anonymous_label, self.toggle_anonymous,
+                style=discord.ButtonStyle.success if self.anonymous else discord.ButtonStyle.secondary,
+            )))
+            if self.anonymous:
+                items.append(display(f"-# {copy['privacy']}"))
         items.append(discord.ui.ActionRow(
-            button(copy["send"], self.submit, style=discord.ButtonStyle.primary,
-                   disabled=not (self.guild_id and self.topic and self.has_content())),
+            button(copy["send_request" if voice_access else "send"], self.submit, style=discord.ButtonStyle.primary,
+                   disabled=not (self.guild_id and self.topic and self.ready_to_send())),
             button(copy["edit"], self.edit),
             button(copy["cancel"], self.cancel),
         ))
         self.view.clear_items()
         self.view.add_item(card(*items))
+
+    def ready_to_send(self):
+        if self.topic == "voice_access":
+            return self.guild_id == hf.SP_SERV_ID and bool(self.previous_account)
+        return self.has_content()
 
     def has_content(self):
         return self.draft.strip() or any(
@@ -448,11 +558,18 @@ class ReportIntake:
         await interaction.response.defer()
         async with self.lock:
             if self.active:
-                if guild_id in self.guild_ids:
+                if guild_id in self.guild_ids and guild_id != self.guild_id:
                     self.guild_id = guild_id
+                    self.previous_account = ""
+                    self.voice_wait = False
+                    if self.topic == "voice_access":
+                        self.topic = None
+                    self.revision += 1
                     self.trace("server_selected")
-                if topic in TOPICS:
+                if (topic in TOPICS and topic != self.topic
+                        and (topic != "voice_access" or self.guild_id == hf.SP_SERV_ID)):
                     self.topic = topic
+                    self.revision += 1
                     self.trace("topic_selected")
                 if page_delta:
                     self.page = max(0, min(self.page + page_delta, (len(self.guild_ids) - 1) // 25 * 25))
@@ -469,6 +586,23 @@ class ReportIntake:
 
     async def select_topic(self, interaction):
         await self.update(interaction, topic=interaction.data["values"][0])
+
+    async def ask_previous_account(self, interaction):
+        if not self.lock.locked():
+            async with self.lock:
+                if self.active and self.topic == "voice_access":
+                    await interaction.response.send_modal(PreviousAccountModal(self))
+                    return
+        await interaction.response.defer()
+
+    async def show_voice_wait(self, interaction):
+        await interaction.response.defer()
+        async with self.lock:
+            if self.active and self.topic == "voice_access":
+                self.previous_account = ""
+                self.voice_wait = True
+                self.revision += 1
+                await self.refresh()
 
     async def previous_page(self, interaction):
         await self.update(interaction, page_delta=-25)
@@ -520,7 +654,7 @@ class ReportIntake:
                 self.trace("submit_unavailable")
                 await self.finish(self.copy["unavailable"])
                 return
-            if self.topic not in TOPICS or not self.has_content():
+            if self.topic not in TOPICS or not self.ready_to_send():
                 self.trace("submit_incomplete")
                 return
             # Once a moderator thread may exist, retire this draft to avoid submitting it twice.
@@ -530,9 +664,15 @@ class ReportIntake:
             try:
                 await self.message.edit(view=status_card(self.copy["sending"]))
                 room_type, report_kind = TOPICS[self.topic]
+                anonymous = self.anonymous
+                draft = self.draft
+                if report_kind == "voice_access":
+                    anonymous = False
+                    account = discord.utils.escape_mentions(self.previous_account)
+                    draft = f"**Solicitud de acceso a voz**\nCuenta anterior: {account}\n\n{draft}".strip()
                 success = await self.cog.start_report_room(
-                    self.user, guild, self.messages, self.draft, room_type,
-                    report_kind=report_kind, anonymous=self.anonymous, dm_card_id=self.message.id,
+                    self.user, guild, self.messages, draft, room_type,
+                    report_kind=report_kind, anonymous=anonymous, dm_card_id=self.message.id,
                     flow_attempt=self.attempt,
                 )
             finally:
@@ -540,7 +680,7 @@ class ReportIntake:
                 await self.finish()
                 report = self.bot.db["reports"].get(self.user.id)
                 if success and report:
-                    view = connected_card(self.cog, self.copy, self.anonymous)
+                    view = connected_card(self.cog, self.copy, anonymous)
                     # The cog's persistent handler owns close clicks, including after a reload.
                     view.stop()
                     await self.message.edit(view=view)

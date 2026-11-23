@@ -66,60 +66,41 @@ class ResolveAfter(commands.Cog):
             color=discord.Color.blurple(),
         )
 
-    def _get_meta_channel_id(self, guild_id: int) -> Optional[int]:
+    def _get_forum_context(
+        self, interaction: discord.Interaction,
+    ) -> Optional[tuple[discord.ForumChannel, set[str]]]:
+        guild = interaction.guild
+        channel = interaction.channel
+        member = interaction.user
+        if (
+            guild is None
+            or not isinstance(channel, discord.Thread)
+            or not isinstance(member, discord.Member)
+        ):
+            return None
+
+        forum = channel.parent
+        if not isinstance(forum, discord.ForumChannel):
+            return None
+
         guilds = self.bot.db.get("guilds", {})
-
-        guild_data = guilds.get(str(guild_id))
-
-        if guild_data is None:
-            guild_data = guilds.get(guild_id)
-
-        if not isinstance(guild_data, dict):
+        config = guilds.get(guild.id, guilds.get(str(guild.id)))
+        if not isinstance(config, dict):
             return None
 
-        meta_channel_id = guild_data.get("meta_channel")
-
-        if not meta_channel_id:
+        room_keys = (
+            ("channel", "meta_channel"),
+            ("secondary_channel", "secondary_meta_channel"),
+            ("voice_report_channel", "voice_report_meta_channel"),
+        )
+        if not any(str(config.get(forum_key)) == str(forum.id) for forum_key, _ in room_keys):
             return None
 
-        try:
-            return int(meta_channel_id)
-        except (TypeError, ValueError):
+        # All posts in a forum inherit its visibility permissions.
+        if not forum.permissions_for(member).view_channel:
             return None
 
-    def _get_meta_thread(
-        self,
-        guild: discord.Guild,
-    ) -> Optional[discord.Thread]:
-
-        meta_channel_id = self._get_meta_channel_id(guild.id)
-
-        if not meta_channel_id:
-            return None
-
-        meta_thread = guild.get_thread(meta_channel_id)
-
-        if isinstance(meta_thread, discord.Thread):
-            return meta_thread
-
-        channel = self.bot.get_channel(meta_channel_id)
-
-        if isinstance(channel, discord.Thread):
-            return channel
-
-        return None
-
-    def _get_meta_forum_id(
-        self,
-        guild: discord.Guild,
-    ) -> Optional[int]:
-
-        meta_thread = self._get_meta_thread(guild)
-
-        if not meta_thread:
-            return None
-
-        return meta_thread.parent_id
+        return forum, {str(config.get(meta_key)) for _, meta_key in room_keys}
 
     async def _post_autocomplete(
         self,
@@ -127,30 +108,17 @@ class ResolveAfter(commands.Cog):
         current: str,
     ) -> list[app_commands.Choice[str]]:
 
-        if not interaction.guild:
+        context = self._get_forum_context(interaction)
+        if context is None:
             return []
-
-        forum_id = self._get_meta_forum_id(interaction.guild)
-
-        if not forum_id:
-            return []
-
-        meta_channel_id = self._get_meta_channel_id(
-            interaction.guild.id
-        )
+        forum, meta_ids = context
 
         current = current.lower().strip()
 
         posts = []
 
-        for thread in interaction.guild.threads:
-            if thread.parent_id != forum_id:
-                continue
-
-            if thread.id == meta_channel_id:
-                continue
-
-            if thread.archived:
+        for thread in forum.threads:
+            if str(thread.id) in meta_ids or thread.archived:
                 continue
 
             if current and current not in thread.name.lower():
@@ -177,15 +145,15 @@ class ResolveAfter(commands.Cog):
     )
     @app_commands.default_permissions()
     @app_commands.describe(
-        post="The forum post/ticket that should be automatically resolved.",
+        post="The ticket to close. Leave blank to use the current ticket.",
         time="How long to wait for a reply before resolving, e.g. 12h, 1d, 2d, 1w.",
     )
     @app_commands.autocomplete(post=_post_autocomplete)
     async def resolve_after(
         self,
         interaction: discord.Interaction,
-        post: str,
         time: str,
+        post: Optional[str] = None,
     ):
         delta = parse_duration(time)
 
@@ -204,53 +172,35 @@ class ResolveAfter(commands.Cog):
             )
             return
 
-        try:
-            post_id = int(post)
-        except (TypeError, ValueError):
+        context = self._get_forum_context(interaction)
+        if context is None:
             await interaction.response.send_message(
-                "Invalid forum post.",
+                "Use this command from a ticket or Meta Discussion post in a report forum you can view.",
                 ephemeral=True,
             )
             return
+        forum, meta_ids = context
 
-        post_channel = interaction.guild.get_thread(post_id)
+        post_channel = interaction.channel
+        if post is not None:
+            try:
+                post_id = int(post)
+            except ValueError:
+                await interaction.response.send_message("Invalid forum post ID.", ephemeral=True)
+                return
+            if post_id != interaction.channel_id:
+                post_channel = forum.get_thread(post_id)
 
         if not isinstance(post_channel, discord.Thread):
-            channel = self.bot.get_channel(post_id)
-
-            if isinstance(channel, discord.Thread):
-                post_channel = channel
-
-        if not isinstance(post_channel, discord.Thread):
             await interaction.response.send_message(
-                "I couldn't find that forum post.",
+                "I couldn't find that post in this report forum.",
                 ephemeral=True,
             )
             return
 
-        forum_id = self._get_meta_forum_id(interaction.guild)
-
-        if not forum_id:
+        if str(post_channel.id) in meta_ids:
             await interaction.response.send_message(
-                "I couldn't find the Meta Discussion post for this server.",
-                ephemeral=True,
-            )
-            return
-
-        if post_channel.parent_id != forum_id:
-            await interaction.response.send_message(
-                "That post doesn't belong to the configured forum.",
-                ephemeral=True,
-            )
-            return
-
-        meta_channel_id = self._get_meta_channel_id(
-            interaction.guild.id
-        )
-
-        if post_channel.id == meta_channel_id:
-            await interaction.response.send_message(
-                "The Meta Discussion post cannot be resolved using this command.",
+                "Choose a ticket with the `post` option.",
                 ephemeral=True,
             )
             return

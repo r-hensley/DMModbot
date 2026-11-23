@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -141,6 +142,68 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
         self.staff.send.assert_not_awaited()
         self.assertEqual(self.bot.db["reports"], {})
         self.assertNotIn(self.user.id, self.cog.intakes)
+
+    async def test_returning_member_can_send_voice_access_request_to_staff(self):
+        secondary = SimpleNamespace(
+            id=8081, guild=self.guild, send=AsyncMock(return_value=self.marker),
+            permissions_for=self.staff.permissions_for,
+        )
+        self.bot.db["guilds"][self.guild.id]["secondary_channel"] = secondary.id
+        self.bot.get_channel = {self.staff.id: self.staff, secondary.id: secondary}.get
+        with (patch.object(hf, "SP_SERV_ID", self.guild.id),
+              patch.object(hf, "deny_new_user_role_request", new_callable=AsyncMock),
+              patch.object(hf, "repost_rai_modlog", new_callable=AsyncMock)):
+            await self.cog.receive_users(self.message)
+            intake = self.cog.intakes[self.user.id]
+            await intake.begin(self.interaction())
+            await intake.toggle_anonymous(self.interaction())
+            await intake.select_topic(self.interaction(values=["voice_access"]))
+            self.assertIn("¿Ya habías estado en este servidor?", repr(intake.view.to_components()))
+            await intake.submit(self.interaction())
+            secondary.send.assert_not_awaited()
+
+            button_click = self.interaction()
+            await intake.ask_previous_account(button_click)
+            modal = button_click.response.send_modal.call_args.args[0]
+            modal.account._value = "old_username"
+            await modal.on_submit(self.interaction())
+            contents = [item.get("content") or "" for item in intake.view.to_components()[0]["components"]]
+            self.assertTrue(any(r"old\_username" in content for content in contents))
+            await intake.submit(self.interaction())
+            await intake.submit(self.interaction())
+
+        self.staff.send.assert_not_awaited()
+        secondary.send.assert_awaited_once()
+        self.assertIn("Cuenta anterior: old_username", repr(self.thread.send.call_args_list))
+        report = self.bot.db["reports"][self.user.id]
+        self.assertEqual(report["report_kind"], "voice_access")
+        self.assertEqual(report["report_room_type"], "secondary")
+        self.assertFalse(report.get("anonymous_reporter", False))
+
+    async def test_first_time_member_gets_voice_wait_without_opening_a_ticket(self):
+        self.user.joined_at = discord.utils.utcnow() - timedelta(minutes=45)
+        with patch.object(hf, "SP_SERV_ID", self.guild.id):
+            await self.cog.receive_users(self.message_with("I would like to talk"))
+            intake = self.cog.intakes[self.user.id]
+            await intake.begin(self.interaction())
+            await intake.select_topic(self.interaction(values=["voice_access"]))
+            await intake.show_voice_wait(self.interaction())
+            await intake.submit(self.interaction())
+
+        ready_at = discord.utils.format_dt(self.user.joined_at + timedelta(hours=3), "R")
+        self.assertIn(ready_at, repr(intake.view.to_components()))
+        self.staff.send.assert_not_awaited()
+        self.assertEqual(self.bot.db["reports"], {})
+
+    async def test_voice_access_never_falls_back_to_main_report_channel(self):
+        with patch.object(hf, "SP_SERV_ID", self.guild.id):
+            for secondary_id in (None, self.staff.id):
+                self.bot.db["guilds"][self.guild.id]["secondary_channel"] = secondary_id
+                opened = await self.cog.start_report_room(
+                    self.user, self.guild, [], "old_username", "secondary", report_kind="voice_access",
+                )
+                self.assertFalse(opened)
+        self.staff.send.assert_not_awaited()
 
     async def test_temporary_trace_reports_failed_open_without_private_payload(self):
         with TemporaryDirectory() as directory:
