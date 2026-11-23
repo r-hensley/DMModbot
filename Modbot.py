@@ -1,5 +1,6 @@
 # -*- coding: utf8 -*-
 import asyncio
+import importlib
 
 import discord
 from discord.ext.commands import Bot
@@ -7,6 +8,7 @@ from discord.ext import commands
 import sys
 import traceback
 import json
+import logging
 from datetime import datetime
 from cogs.utils.db_utils import str_keys_to_int_keys, convert_old_db, int_keys_to_str_keys
 from dotenv import load_dotenv
@@ -20,8 +22,17 @@ except FileNotFoundError:
     raise FileNotFoundError("The BotUtils submodule is not initialized. "
                             "Please run 'git submodule update --init --recursive' to initialize it.")
 from cogs.utils import helper_functions as hf
+from cogs.utils.BotUtils.bot_control import BotControl
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
+logger = logging.getLogger(__name__)
+
+EXTENSIONS = {
+    name: f"cogs.{name}"
+    for name in ("modbot", "main", "admin", "owner", "unbans", "events",
+                 "submod", "report_status", "resolve_after")
+}
+SOCKET_ENV = "DMMODBOT_CONTROL_SOCKET"
 
 discord.utils.setup_logging()
 
@@ -79,10 +90,10 @@ class Modbot(Bot):
 
         self.log_channel = None
         self.error_channel = None
+        self.control = None
 
     async def setup_hook(self):
-        for extension in ['cogs.modbot', 'cogs.main', 'cogs.admin', 'cogs.owner', 'cogs.unbans', 'cogs.events',
-                          'cogs.submod', 'cogs.report_status', 'cogs.resolve_after']:
+        for extension in EXTENSIONS.values():
             try:
                 await self.load_extension(extension)
             except Exception as e:
@@ -90,7 +101,33 @@ class Modbot(Bot):
                 traceback.print_exc()
                 raise
 
-        hf.setup(bot=self, loop=asyncio.get_event_loop())  # this is to define here.bot in the hf file
+        hf.setup(bot=self, loop=asyncio.get_running_loop())
+        if socket_path := os.getenv(SOCKET_ENV):
+            self.control = BotControl(
+                self, socket_path, extensions=EXTENSIONS,
+                reload_helpers={
+                    "hf": self.reload_helper_functions,
+                    "report_intake": lambda: importlib.reload(importlib.import_module("cogs.report_intake")),
+                },
+            )
+            try:
+                await self.control.start()
+            except (OSError, ValueError, NotImplementedError):
+                logger.exception("Could not start the local bot control socket")
+
+    def reload_helper_functions(self):
+        dump_lock = hf.dump_json_lock
+        importlib.reload(hf)
+        hf.dump_json_lock = dump_lock
+        hf.setup(bot=self, loop=asyncio.get_running_loop())
+
+    async def close(self):
+        try:
+            if self.control is not None:
+                await self.control.close()
+        finally:
+            await super().close()
+
 
 def run_bot():
     bot = Modbot()
