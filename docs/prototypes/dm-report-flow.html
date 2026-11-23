@@ -191,7 +191,7 @@
             <p class="byline">DMModbot</p>
             <div class="card">
               <div class="welcome-lines">
-                <p lang="en">Push this button to start.</p>
+                <p lang="en"><strong><u>Push this button to start.</u></strong></p>
                 <p lang="es">Presiona este botón para empezar.</p>
                 <p lang="ja">このボタンを押すと始まります。</p>
                 <p lang="fr">Appuie sur ce bouton pour commencer.</p>
@@ -460,18 +460,24 @@
     get('bot-message').lang = locale;
   }
 
-  function message({ who, text: body, attachments, status }) {
+  function message({ who, text: body, attachments, status, notice }) {
     const initials = who === 'you' ? 'Y' : 'M';
     const line = document.createElement('div');
     line.className = 'message';
     line.innerHTML = `<div class="avatar ${who}" aria-hidden="true">${initials}</div>
-      <div><p class="byline" lang="${locale}">${t(who)}</p>
+      <div><p class="byline" lang="${locale}">${who === 'bot' ? 'DMModbot' : t(who)}</p>
       <p class="message-text" dir="auto"></p>${fileList(attachments)}
       ${status ? `<p lang="${locale}" class="note ${status === 'delivered' ? 'status-good' : 'status-bad'}">${t(status)}</p>` : ''}</div>`;
     const bodyElement = line.querySelector('.message-text');
-    bodyElement.textContent = body || '';
-    bodyElement.hidden = !body;
+    bodyElement.textContent = notice ? t(notice) : body || '';
+    bodyElement.hidden = !bodyElement.textContent;
     return line;
+  }
+
+  function closeConversation(error = false) {
+    phase = error ? 'relayFailed' : 'closed';
+    failNext = false;
+    after.push({ who: 'bot', notice: 'closed' });
   }
 
   function syncComposer() {
@@ -541,7 +547,7 @@
       case 'back': phase = 'setup'; break;
       case 'confirm': phase = 'confirm'; break;
       case 'keep': phase = 'open'; break;
-      case 'close': phase = 'closed'; failNext = false; break;
+      case 'close': closeConversation(); break;
       case 'resume': phase = resumePhase; break;
       case 'cancel':
         draft = '';
@@ -587,13 +593,12 @@
     composer.reset();
     if (phase === 'open') {
       if (['end', 'close'].includes(body.toLowerCase()) && !attachments.length) {
-        phase = 'closed';
-        failNext = false;
+        after.push(outgoing);
+        closeConversation();
       } else {
         outgoing.status = failNext ? 'failedMessage' : 'delivered';
         after.push(outgoing);
-        if (failNext) phase = 'relayFailed';
-        failNext = false;
+        if (failNext) closeConversation(true);
       }
     } else {
       draft = [draft, body].filter(Boolean).join('\n');

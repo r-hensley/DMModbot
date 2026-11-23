@@ -356,7 +356,7 @@ class Modbot(commands.Cog):
             except discord.NotFound:
                 if self.bot.db['reports'].get(user.id) is report:
                     self.bot.db['reports'].pop(user.id, None)
-                    await self.update_dm_report_card(channel, user, report, error=True)
+                    await self.update_dm_report_card(channel, user, report, error=True, notify=True)
                     await hf.dump_json()
                 return
         await self.end_report(OpenReport(report, user, thread, channel, thread), error=False)
@@ -537,18 +537,25 @@ class Modbot(commands.Cog):
                     await target.send(content)
                 except (discord.Forbidden, discord.NotFound, discord.HTTPException, AttributeError):
                     pass
-    async def update_dm_report_card(self, channel, user, report, *, error):
+    async def update_dm_report_card(self, channel, user, report, *, error, notify=False):
         if channel is None or not report.get('dm_card_id'):
             return
         copy = card_copy(hf.get_user_locale(user.id))
         view = status_card(copy['interrupted' if error else 'closed'])
         try:
-            try:
-                await channel.get_partial_message(report['dm_card_id']).edit(view=view)
-            except discord.NotFound:
-                await channel.send(view=view)
+            await channel.get_partial_message(report['dm_card_id']).edit(view=view)
+        except discord.NotFound:
+            pass
         except discord.HTTPException:
             logger.warning("Could not update the closed report card %s", report['dm_card_id'])
+        if notify:
+            notice = f"**{copy['closed']}**"
+            if error:
+                notice = f"{copy['interrupted']}\n{notice}"
+            try:
+                await channel.send(notice)
+            except discord.HTTPException:
+                logger.warning("Could not send closure notice for report card %s", report['dm_card_id'])
 
     async def end_report(self, open_report: OpenReport, error, finish=False, notify=True):
         user_id = open_report.user.id
@@ -567,7 +574,8 @@ class Modbot(commands.Cog):
             self.bot.recently_in_report_room[user_id] = discord.utils.utcnow().timestamp()
             try:
                 if report.get('dm_card_id'):
-                    await self.update_dm_report_card(open_report.user.dm_channel, open_report.user, report, error=error)
+                    await self.update_dm_report_card(open_report.user.dm_channel, open_report.user, report,
+                                                     error=error, notify=notify)
                     if notify:
                         await self.notify_end_thread(thread, None, error)
                 elif notify:

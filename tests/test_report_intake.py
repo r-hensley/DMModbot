@@ -56,6 +56,7 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intake.draft, "")
         welcome = intake.view.to_components()[0]["components"][0]["content"]
         self.assertEqual(len(welcome.splitlines()), 6)
+        self.assertEqual(welcome.splitlines()[0], "__**Push this button to start.**__")
         self.assertIn("Appuie sur ce bouton", welcome)
         self.assertIn("اضغط على هذا الزر", welcome)
         self.assertIn("点击此按钮开始", welcome)
@@ -119,6 +120,7 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.user.id, self.bot.db["reports"])
         self.assertEqual(len(self.bot.db["recent_reports"][self.guild.id][self.user.id]), 1)
         self.assertIn("Conversación cerrada", repr(self.card.edit.call_args.kwargs["view"].to_components()))
+        self.user.dm_channel.send.assert_awaited_with("**Conversación cerrada**")
 
     async def test_block_is_rechecked_at_submission(self):
         await self.cog.receive_users(self.message_with("A report draft"))

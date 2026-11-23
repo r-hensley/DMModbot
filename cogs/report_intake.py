@@ -8,7 +8,7 @@ from .utils import helper_functions as hf
 
 
 WELCOME = (
-    "Push this button to start.\n"
+    "__**Push this button to start.**__\n"
     "Presiona este botón para empezar.\n"
     "このボタンを押すと始まります。\n"
     "Appuie sur ce bouton pour commencer.\n"
