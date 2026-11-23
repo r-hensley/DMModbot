@@ -12,3 +12,4 @@ venv/*
 /tracebacks.db
 /tracebacks.db-*
 /.control/
+/.readme-reviewed

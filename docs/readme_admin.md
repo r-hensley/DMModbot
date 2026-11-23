@@ -84,4 +84,4 @@ Update the checkout and its BotUtils pin before reloading. Verify the result wit
 
 ## Update these guides
 
-Edit the [templates](docs/) or the bot source, then run `python3 docs/generate_readmes.py` from the checkout. GitHub Actions regenerates both guides on branch pushes and commits them when the output changes.
+Edit the [templates](docs/) when the walkthroughs need to change. Run `python3 docs/generate_readmes.py` from the checkout to regenerate both guides. Include guide updates in the same commit as the related bot change when practical.
