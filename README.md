@@ -3,6 +3,9 @@
 DM Modbot connects Discord users with server staff for reports, questions,
 and ban appeals through direct messages.
 
+- [User guide](readme_auto_user.md)
+- [Admin guide](readme_auto_admin.md)
+
 ### Terms and privacy
 
 - [Terms of Service](TERMS.md)
@@ -36,10 +39,7 @@ git clone --recurse-submodules
 
    (When using the master branch of discord.py, you also need `python -m pip install -U git+https://github.com/Rapptz/discord.py`)
 
-4. Copy the config sample file and fill it in
-   ```bash
-   cp config.example.py config.py
-   ```
+4. Create a `.env` file using the settings in the [admin guide](readme_auto_admin.md#install-and-configure-the-bot).
 5. Run
    ```bash
    python3 Modbot.py
