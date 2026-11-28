@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import discord
 from discord.ext import tasks
 
+from cogs.admin import Admin
 from cogs.modbot import Modbot, OpenReport
 from cogs.report_intake import CloseReportView, DraftModal, TRACE_SECONDS, trace_flow
 from cogs.report_status import ReportStatus, ThreadStats
@@ -54,6 +55,90 @@ class ReportIntakeTest(unittest.IsolatedAsyncioTestCase):
                                locale=discord.Locale.spain_spanish,
                                response=SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock(),
                                                         send_modal=AsyncMock()))
+
+    async def run_report_command(self, guild=None):
+        self.user.create_dm = AsyncMock()
+        self.user.send = AsyncMock()
+        self.user.dm_channel.jump_url = "https://discord.com/channels/@me/123"
+        self.bot.get_cog = Mock(return_value=self.cog)
+        interaction = self.interaction()
+        interaction.guild = guild
+        interaction.followup = SimpleNamespace(send=AsyncMock())
+        await Admin.report.callback(Admin(self.bot), interaction)
+        return interaction
+
+    async def test_dm_report_command_starts_empty_draft_with_server_selection(self):
+        other = SimpleNamespace(id=8733, name="Another Server", get_member=Mock(return_value=self.user))
+        blocked = SimpleNamespace(id=8734, name="Blocked Server", get_member=Mock(return_value=self.user))
+        self.bot.guilds.extend([other, blocked])
+        self.bot.db["guilds"].update({other.id: {"channel": 8081}, blocked.id: {"channel": 8082}})
+        self.bot.get_guild = {guild.id: guild for guild in self.bot.guilds}.get
+        self.bot.db["blocked_users"] = {blocked.id: [self.user.id]}
+
+        await self.run_report_command()
+
+        intake = self.cog.intakes[self.user.id]
+        self.assertEqual(intake.draft, "")
+        self.assertEqual(intake.messages, [])
+        await intake.begin(self.interaction())
+        self.assertEqual(intake.guild_ids, [other.id, self.guild.id])
+        self.assertIsNone(intake.guild_id)
+        self.assertIn(intake.copy["server"], repr(intake.view.to_components()))
+        await intake.select_guild(self.interaction(values=[str(self.guild.id)]))
+        self.assertEqual(intake.guild_id, self.guild.id)
+        await self.cog.receive_users(self.message_with("Report details"))
+        await intake.select_topic(self.interaction(values=["report"]))
+        with patch.object(hf, "repost_rai_modlog", new_callable=AsyncMock):
+            await intake.submit(self.interaction())
+        self.assertEqual(self.bot.db["reports"][self.user.id]["guild_id"], self.guild.id)
+
+    async def test_dm_report_command_automatically_selects_only_eligible_server(self):
+        await self.run_report_command()
+        intake = self.cog.intakes[self.user.id]
+        await intake.begin(self.interaction())
+        self.assertEqual(intake.guild_id, self.guild.id)
+        self.assertFalse(intake.ready_to_send())
+
+    async def test_dm_report_command_explains_no_eligible_servers(self):
+        self.bot.db["guilds"].clear()
+        await self.run_report_command()
+        intake = self.cog.intakes[self.user.id]
+        await intake.begin(self.interaction())
+        self.assertNotIn(self.user.id, self.cog.intakes)
+        view = self.user.dm_channel.send.call_args.kwargs["view"]
+        self.assertIn(intake.copy["none"], repr(view.to_components()))
+
+    async def test_dm_report_command_preserves_existing_draft(self):
+        await self.cog.receive_users(self.message_with("Existing details"))
+        intake = self.cog.intakes[self.user.id]
+        await self.run_report_command()
+        self.assertIs(self.cog.intakes[self.user.id], intake)
+        self.assertEqual(intake.draft, "Existing details")
+        self.user.dm_channel.send.assert_awaited_once()
+
+    async def test_dm_report_command_rejects_open_report(self):
+        self.bot.db["reports"][self.user.id] = {"guild_id": self.guild.id}
+        interaction = await self.run_report_command()
+        self.assertIn("already have an open report", interaction.response.send_message.call_args.args[0])
+        self.assertNotIn(self.user.id, self.cog.intakes)
+        self.user.dm_channel.send.assert_not_awaited()
+
+    async def test_dm_report_command_respects_recent_report_cooldown(self):
+        self.bot.recently_in_report_room[self.user.id] = discord.utils.utcnow().timestamp()
+        await self.run_report_command()
+        self.assertNotIn(self.user.id, self.cog.intakes)
+        self.assertIn("recently left a report room", self.user.send.call_args.args[0])
+
+    async def test_server_report_command_still_requires_setup(self):
+        self.bot.db["guilds"].clear()
+        interaction = await self.run_report_command(self.guild)
+        self.assertIn("not set up a report room", interaction.response.send_message.call_args.args[0])
+        self.user.create_dm.assert_not_awaited()
+
+    async def test_server_report_command_still_prompts_for_dm_message(self):
+        await self.run_report_command(self.guild)
+        self.user.send.assert_awaited_once_with("Please start your report by typing to me your message here.")
+        self.assertNotIn(self.user.id, self.cog.intakes)
 
     async def test_language_is_saved_when_welcome_is_replaced(self):
         await self.cog.receive_users(self.message)

@@ -69,7 +69,7 @@ The prefix `_` follows the example configuration. Brackets around slash options 
 | `/create_report_button` | Creates a report button in the current channel |
 | `/permanent_non_anonymous enabled:…` | Enable or disable permanent non-anonymous mode for your messages in report threads. |
 | `/post_instructions` | Posts instructions for modbot to be pinned in the current channel |
-| `/report` | Start a report with the mods of this server |
+| `/report` | Start a report with server staff, including from DMs |
 | `/resolve_after time:… [post:…]` | Automatically resolve a forum ticket if the user doesn't reply in time. |
 | `_clear` | Clears the server state |
 | `_not_anonymous` | This command will REVEAL moderator names to the user for the current report session. |

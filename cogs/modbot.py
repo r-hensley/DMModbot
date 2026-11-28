@@ -161,17 +161,25 @@ class Modbot(commands.Cog):
             trace_flow("dm_during_open")
             return True
 
-        if time_remaining := self.check_if_recently_finished_report(msg):
+        await self.start_report_intake(msg.author, msg.channel, msg)
+        return True
+
+    async def start_report_intake(self, user, channel, message=None):
+        if (user.id in self.intakes or user.id in self.bot.db['reports']
+                or user.id in self.opening_reports):
+            return
+
+        if time_remaining := self.check_if_recently_finished_report(user):
             trace_flow("dm_during_cooldown")
-            await msg.author.send(
+            await user.send(
                 f"You've recently left a report room. Please wait {time_remaining} more seconds before "
                 "joining again. A new report is only needed if you still need help."
             )
-            return True
+            return
 
-        intake = ReportIntake(self, msg)
-        intake.trace("first_dm_received")
-        self.intakes[user_id] = intake
+        intake = ReportIntake(self, user, channel, message)
+        intake.trace("first_dm_received" if message is not None else "report_command_received")
+        self.intakes[user.id] = intake
         async with intake.lock:
             try:
                 await intake.welcome()
@@ -179,7 +187,6 @@ class Modbot(commands.Cog):
                 trace_flow_error("welcome_error", error, intake.attempt)
                 await intake.finish()
                 raise
-        return True
 
     # for finding out which report session a certain message belongs to, None if not part of anything
     # we should only be here if a user is for sure in the report room
@@ -749,15 +756,15 @@ class Modbot(commands.Cog):
         link = f"https://discordapp.com/oauth2/authorize?client_id={self.bot.user.id}&scope=bot&permissions=18496"
         await ctx.send(f"Invite me using this link: {link}")
 
-    def check_if_recently_finished_report(self, msg):
+    def check_if_recently_finished_report(self, user):
         report_timeout = 30  # number of seconds to make a user wait after finishing a report to open another room
 
-        currently_in_settingup = msg.author.id in self.intakes
-        currently_in_report_room = msg.author.id in self.bot.db['reports']
+        currently_in_settingup = user.id in self.intakes
+        currently_in_report_room = user.id in self.bot.db['reports']
         if not currently_in_settingup and not currently_in_report_room:
-            timestamp_of_last_report_end = getattr(self.bot, "recently_in_report_room", {}).get(msg.author.id, 0)
+            timestamp_of_last_report_end = getattr(self.bot, "recently_in_report_room", {}).get(user.id, 0)
             time_since_report = discord.utils.utcnow().timestamp() - timestamp_of_last_report_end
-            if msg.author.id in self.bot.recently_in_report_room and time_since_report < report_timeout:
+            if user.id in self.bot.recently_in_report_room and time_since_report < report_timeout:
                 time_remaining = int(report_timeout - time_since_report)
                 return time_remaining
 

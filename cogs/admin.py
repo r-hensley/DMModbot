@@ -226,11 +226,15 @@ class Admin(commands.Cog):
         # https://discord.com/channels/@me/713269937556291696/9999999999999999999
         # the '9' * 19 at the end refers to a message ID. Choosing 9999... will bring user to the bottom of the chat
         dm_url_link = f"{button_interaction.user.dm_channel.jump_url}/{'9' * 19}"
-        await button_interaction.response.send_message(f"Check your private messages from me → {dm_url_link}",
-                                                       ephemeral=True)
+        prompt = ("Use the report form in this DM to choose a server and draft your report."
+                  if button_interaction.guild is None else f"Check your private messages from me → {dm_url_link}")
+        await button_interaction.response.send_message(prompt, ephemeral=True)
         
         try:
-            await button_interaction.user.send("Please start your report by typing to me your message here.")
+            if button_interaction.guild is None:
+                await cog.start_report_intake(button_interaction.user, button_interaction.user.dm_channel)
+            else:
+                await button_interaction.user.send("Please start your report by typing to me your message here.")
             # guild, report_room_type = await cog.ask_report_type(button_interaction.user, button_interaction.guild)
         except discord.Forbidden:
             await button_interaction.followup.send("`❌ ERROR ❌`: I could not send a message to you due to your "
@@ -283,8 +287,8 @@ class Admin(commands.Cog):
 
     @app_commands.command()
     async def report(self, interaction: discord.Interaction):
-        """Start a report with the mods of this server"""
-        if not interaction.guild or interaction.guild.id not in self.bot.db.get('guilds', {}):
+        """Start a report with server staff, including from DMs"""
+        if interaction.guild is not None and interaction.guild.id not in self.bot.db.get('guilds', {}):
             await interaction.response.send_message(
                 "This server has not set up a report room yet. Please ask the server admins to run `_setup`.",
                 ephemeral=True)

@@ -4,8 +4,8 @@ Use DMModbot to send a private report or question to your Discord server’s sta
 
 ## Start a report
 
-1. Open a DM with the bot and send a message. You can also use `/report` or the report button in your server, if available, and follow the prompt to your DMs.
-2. Press the start button in the bot’s reply. Select your server if the bot offers more than one, then select a topic.
+1. Open a DM with the bot and send a message or use `/report` to open the report form. You can also use `/report` or the report button in your server, if available, and follow the prompt to your DMs.
+2. Press the start button in the bot’s reply. Choose from the shared servers that accept reports, then select a topic. If only one server is available, it is selected automatically. Using `/report` again keeps your current draft.
 3. Describe what happened. Include relevant usernames, message links, screenshots, or other evidence. You can add details and attachments by sending them in the DM. Use **$edit** to change the text before sending.
 4. Select **$send** and wait for **$sent** or **$sent_anon**. **$cancel** discards the draft if you change your mind.
 

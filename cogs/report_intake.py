@@ -366,12 +366,12 @@ class IntakeView(ReportLayoutView):
 
 
 class ReportIntake:
-    def __init__(self, cog, message):
+    def __init__(self, cog, user, channel, message=None):
         self.cog = cog
         self.bot = cog.bot
         self.attempt = uuid4().hex[:12]
-        self.user = message.author
-        self.channel = message.channel
+        self.user = user
+        self.channel = channel
         self.lock = asyncio.Lock()
         self.copy = card_copy(hf.get_user_locale(self.user.id))
         self.view = IntakeView(self)
@@ -383,8 +383,10 @@ class ReportIntake:
         self.previous_account = ""
         self.voice_wait = False
         self.anonymous = False
-        self.draft = "" if message.content.strip().casefold() in {"hi", "hey", "hello", "hola", "こんにちは"} else message.content
-        self.messages = [message]
+        self.draft = message.content if message is not None else ""
+        if self.draft.strip().casefold() in {"hi", "hey", "hello", "hola", "こんにちは"}:
+            self.draft = ""
+        self.messages = [message] if message is not None else []
         self.revision = 0
 
     def trace(self, event, **details):
